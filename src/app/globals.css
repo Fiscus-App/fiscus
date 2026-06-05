@@ -195,3 +195,63 @@ body {
     linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
   background-size: 24px 24px;
 }
+
+/* ─── Smooth press feedback ───────────────────────────────────────── */
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:active {
+  transform: scale(0.96);
+  transition: transform 0.1s ease;
+}
+
+/* ─── Gold glow for active elements ──────────────────────────────── */
+@keyframes gold-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 168, 67, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(212, 168, 67, 0.12); }
+}
+
+.gold-pulse {
+  animation: gold-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Spin animation ──────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ─── Slide in up ─────────────────────────────────────────────────── */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-up {
+  animation: slide-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ─── Feed card enter ─────────────────────────────────────────────── */
+@keyframes card-enter {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.card-enter {
+  animation: card-enter 0.25s ease forwards;
+}
+
+/* ─── Blue accent ─────────────────────────────────────────────────── */
+.blue-a { background: rgba(91, 138, 245, 0.1); }
+
