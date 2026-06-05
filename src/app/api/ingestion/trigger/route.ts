@@ -6,6 +6,7 @@ import {
   ingestRbaReleases,
   ingestAbsReleases,
   enrichArticle,
+  type RawArticle,
 } from '@/lib/ingestion/pipeline'
 
 export async function POST(req: NextRequest) {
@@ -38,7 +39,7 @@ async function runIngestion(
   source: { id: string; type: string; rssUrl: string | null },
   jobId: string
 ) {
-  let rawArticles
+  let rawArticles: RawArticle[] | undefined
 
   switch (source.type) {
     case 'OFFICIAL_API':
