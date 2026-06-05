@@ -1,0 +1,384 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USERS ───────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  image         String?
+  passwordHash  String?
+  role          UserRole @default(USER)
+  tier          UserTier @default(FREE)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  interests      UserInterest[]
+  watchHistory   WatchHistory[]
+  insightfulVotes InsightfulVote[]
+  saves          Save[]
+  shares         Share[]
+  teamMemberships TeamMember[]
+  teamMessages   TeamMessage[]
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserTier {
+  FREE
+  PRO
+  TEAM
+  ENTERPRISE
+}
+
+// ─── INTERESTS ───────────────────────────────────────────────────────
+
+model UserInterest {
+  id       String @id @default(cuid())
+  userId   String
+  interest String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, interest])
+  @@index([userId])
+}
+
+// ─── TEAMS ───────────────────────────────────────────────────────────
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members  TeamMember[]
+  messages TeamMessage[]
+  folders  TeamFolder[]
+  shares   Share[]
+}
+
+model TeamMember {
+  id       String     @id @default(cuid())
+  teamId   String
+  userId   String
+  role     TeamRole   @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+model TeamMessage {
+  id        String          @id @default(cuid())
+  teamId    String
+  userId    String
+  content   String
+  type      TeamMessageType @default(TEXT)
+  videoId   String?
+  pinnedAt  DateTime?
+  createdAt DateTime        @default(now())
+
+  team  Team  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video? @relation(fields: [videoId], references: [id])
+
+  @@index([teamId])
+}
+
+enum TeamMessageType {
+  TEXT
+  VIDEO_SHARE
+  SYSTEM
+}
+
+model TeamFolder {
+  id        String   @id @default(cuid())
+  teamId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  team  Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  items FolderItem[]
+
+  @@index([teamId])
+}
+
+model FolderItem {
+  id        String   @id @default(cuid())
+  folderId  String
+  videoId   String
+  addedAt   DateTime @default(now())
+
+  folder TeamFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  video  Video      @relation(fields: [videoId], references: [id], onDelete: Cascade)
+}
+
+// ─── SOURCES ─────────────────────────────────────────────────────────
+
+model Source {
+  id              String           @id @default(cuid())
+  name            String
+  url             String           @unique
+  type            SourceType
+  credibility     SourceCredibility
+  rssUrl          String?
+  apiEndpoint     String?
+  active          Boolean          @default(true)
+  respectRobots   Boolean          @default(true)
+  lastIngestedAt  DateTime?
+  articlesCount   Int              @default(0)
+  createdAt       DateTime         @default(now())
+
+  articles       Article[]
+  ingestionJobs  IngestionJob[]
+}
+
+enum SourceType {
+  OFFICIAL_API
+  RSS_FEED
+  LICENSED_FEED
+  WEB_SCRAPER
+  MARKET_DATA_API
+}
+
+enum SourceCredibility {
+  OFFICIAL
+  TIER_1_MEDIA
+  MARKET_DATA
+  OTHER
+}
+
+// ─── ARTICLES ────────────────────────────────────────────────────────
+
+model Article {
+  id            String   @id @default(cuid())
+  sourceId      String
+  externalId    String?
+  title         String
+  url           String   @unique
+  author        String?
+  bodyText      String?
+  publishedAt   DateTime
+  ingestedAt    DateTime @default(now())
+  sector        String?
+  topicTags     String[]
+  relatedTickers String[]
+  credibilityScore Float @default(1.0)
+  summary       String?
+  videoScriptId String?  @unique
+  videoId       String?  @unique
+
+  source    Source       @relation(fields: [sourceId], references: [id])
+  script    VideoScript? @relation(fields: [videoScriptId], references: [id])
+  video     Video?       @relation(fields: [videoId], references: [id])
+  jobEntry  IngestionJob? @relation(fields: [id], references: [articleId])
+
+  @@index([sourceId])
+  @@index([publishedAt])
+  @@index([sector])
+}
+
+// ─── MARKET DATA ─────────────────────────────────────────────────────
+
+model MarketUpdate {
+  id         String   @id @default(cuid())
+  ticker     String
+  name       String
+  price      Float
+  change     Float
+  changeAbs  Float
+  volume     BigInt?
+  high       Float?
+  low        Float?
+  open       Float?
+  timestamp  DateTime @default(now())
+  type       MarketUpdateType
+
+  @@index([ticker])
+  @@index([timestamp])
+}
+
+enum MarketUpdateType {
+  STOCK
+  INDEX
+  COMMODITY
+  FX
+  BOND
+  CRYPTO
+}
+
+model Ticker {
+  id       String @id @default(cuid())
+  symbol   String @unique
+  name     String
+  sector   String?
+  exchange String @default("ASX")
+  active   Boolean @default(true)
+}
+
+// ─── AI CONTENT ──────────────────────────────────────────────────────
+
+model VideoScript {
+  id            String   @id @default(cuid())
+  hook          String
+  coreUpdate    String
+  whyItMatters  String
+  sourceAttrib  String
+  fullScript    String
+  wordCount     Int
+  generatedAt   DateTime @default(now())
+  modelVersion  String
+  promptVersion String   @default("v1")
+
+  article  Article?
+  video    Video?
+}
+
+model Video {
+  id            String      @id @default(cuid())
+  articleId     String?     @unique
+  scriptId      String?     @unique
+  title         String
+  thumbnailUrl  String?
+  videoUrl      String?
+  duration      Int?
+  status        VideoStatus @default(PENDING)
+  generatedAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  article  Article?     @relation(fields: [articleId], references: [id])
+  script   VideoScript? @relation(fields: [scriptId], references: [id])
+  
+  insightfulVotes InsightfulVote[]
+  saves           Save[]
+  shares          Share[]
+  watchHistory    WatchHistory[]
+  teamMessages    TeamMessage[]
+  folderItems     FolderItem[]
+  generationJobs  VideoJob[]
+}
+
+enum VideoStatus {
+  PENDING
+  SCRIPTING
+  AUDIO
+  RENDERING
+  COMPLETE
+  FAILED
+}
+
+// ─── USER ACTIVITY ────────────────────────────────────────────────────
+
+model WatchHistory {
+  id          String   @id @default(cuid())
+  userId      String
+  videoId     String
+  watchedAt   DateTime @default(now())
+  watchSeconds Int      @default(0)
+  completed   Boolean  @default(false)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@index([userId])
+  @@index([videoId])
+}
+
+model InsightfulVote {
+  id        String   @id @default(cuid())
+  userId    String
+  videoId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+}
+
+model Save {
+  id        String   @id @default(cuid())
+  userId    String
+  videoId   String
+  savedAt   DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+}
+
+model Share {
+  id        String    @id @default(cuid())
+  userId    String
+  videoId   String
+  teamId    String?
+  sharedAt  DateTime  @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  team  Team?  @relation(fields: [teamId], references: [id])
+}
+
+// ─── JOBS ─────────────────────────────────────────────────────────────
+
+model IngestionJob {
+  id          String    @id @default(cuid())
+  sourceId    String
+  articleId   String?   @unique
+  status      JobStatus @default(PENDING)
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  source  Source  @relation(fields: [sourceId], references: [id])
+  article Article?
+
+  @@index([sourceId])
+  @@index([status])
+}
+
+model VideoJob {
+  id          String    @id @default(cuid())
+  videoId     String
+  step        String
+  status      JobStatus @default(PENDING)
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+}

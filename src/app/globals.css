@@ -1,0 +1,197 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Fiscus Design System ────────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg: #07091a;
+  --bg-2: #0d1222;
+  --bg-3: #141c30;
+  --bg-4: #1a243d;
+  --bg-5: #222e4a;
+
+  /* Lines */
+  --line: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.12);
+  --line-3: rgba(255, 255, 255, 0.2);
+
+  /* Text */
+  --text-primary: #eef2ff;
+  --text-secondary: #8899bb;
+  --text-muted: #4a5878;
+  --text-faint: #2a3450;
+
+  /* Brand */
+  --gold: #d4a843;
+  --gold-a: rgba(212, 168, 67, 0.08);
+  --gold-b: rgba(212, 168, 67, 0.2);
+  --gold-c: rgba(212, 168, 67, 0.35);
+
+  /* Market */
+  --green: #2ed494;
+  --green-a: rgba(46, 212, 148, 0.1);
+  --red: #ff5252;
+  --red-a: rgba(255, 82, 82, 0.1);
+
+  /* Accent */
+  --blue: #5b8af5;
+  --blue-a: rgba(91, 138, 245, 0.1);
+  --purple: #a78bfa;
+  --purple-a: rgba(167, 139, 250, 0.1);
+  --orange: #f97316;
+  --orange-a: rgba(249, 115, 22, 0.1);
+  --amber: #f59e0b;
+  --amber-a: rgba(245, 158, 11, 0.1);
+
+  /* Typography */
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+}
+
+/* ─── Base resets ─────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  height: 100dvh;
+}
+
+/* ─── Feed scroll snap ────────────────────────────────────────────── */
+.feed-scroll {
+  scroll-snap-type: y mandatory;
+  overflow-y: scroll;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  height: 100%;
+}
+
+.feed-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.feed-item {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* ─── Ticker tape animation ───────────────────────────────────────── */
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.ticker-inner {
+  animation: ticker-scroll 32s linear infinite;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.ticker-inner:hover {
+  animation-play-state: paused;
+}
+
+/* ─── Live pulse ──────────────────────────────────────────────────── */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+.live-dot {
+  animation: live-pulse 2s infinite;
+}
+
+/* ─── Video progress bar ──────────────────────────────────────────── */
+@keyframes scan-line {
+  from { top: -1px; }
+  to { top: 100%; }
+}
+
+.scan-line {
+  animation: scan-line 4.5s linear infinite;
+}
+
+/* ─── Typewriter cursor ───────────────────────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor {
+  animation: blink 0.7s infinite;
+  color: var(--gold);
+}
+
+/* ─── Fade up animation ───────────────────────────────────────────── */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fade-up 0.3s ease forwards;
+}
+
+/* ─── Scrollbar styling ───────────────────────────────────────────── */
+.scroll-y {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bg-4) transparent;
+}
+
+.scroll-y::-webkit-scrollbar {
+  width: 3px;
+}
+
+.scroll-y::-webkit-scrollbar-thumb {
+  background: var(--bg-4);
+  border-radius: 3px;
+}
+
+/* ─── Source badge colours ────────────────────────────────────────── */
+.badge-official {
+  background: var(--green-a);
+  color: var(--green);
+}
+
+.badge-tier1 {
+  background: var(--blue-a);
+  color: var(--blue);
+}
+
+.badge-market {
+  background: var(--gold-a);
+  color: var(--gold);
+}
+
+.badge-other {
+  background: var(--orange-a);
+  color: var(--orange);
+}
+
+/* ─── Chart grid background ───────────────────────────────────────── */
+.chart-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
