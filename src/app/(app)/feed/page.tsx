@@ -1,27 +1,28 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { VideoCard } from '@/components/feed/VideoCard'
+import { RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import type { FeedItem } from '@/types'
 
-// ── Mock feed data ───────────────────────────────────────────────────
+// ── Mock data (shown until live data arrives) ─────────────────────────────────
 const MOCK_FEED: FeedItem[] = [
   {
     id: '1',
     ticker: 'CBA',
-    company: 'Commonwealth Bank of Australia',
+    company: 'Commonwealth Bank',
     sector: 'Banking',
     category: 'Earnings',
     sectorColor: '#5b8af5',
-    headline: 'CBA Posts Record $10.2B Full-Year Cash Profit, Beats Analyst Estimates by 4.1%',
-    teaser: 'Commonwealth Bank reported cash profit of $10.2B for FY24, up 6.2% year-on-year, driven by NIM expansion and lower loan loss provisions.',
+    headline: 'CBA Posts Record $10.2B Full-Year Cash Profit, Beats Estimates by 4.1%',
+    teaser: 'Commonwealth Bank reported cash profit of $10.2B for FY24, up 6.2% YoY, driven by NIM expansion and lower loan loss provisions.',
     script: 'Commonwealth Bank delivered a record $10.2 billion cash profit for FY2024, surpassing consensus estimates by 4.1%. Net interest margin held at 2.03%, while loan impairment charges fell 12% to $1.1 billion. The board declared a final dividend of $2.50 per share, fully franked. CBA shares have outperformed the ASX 200 by 18 percentage points year-to-date, now trading at 20.4x forward earnings. Source: Commonwealth Bank of Australia.',
     source: 'CBA Investor Relations',
     sourceType: 'OFFICIAL',
     sourceUrl: 'https://www.commbank.com.au/investors',
     change: 1.82,
     price: 162.40,
-    tags: ['CBA', 'banking', 'earnings', 'dividends', 'ASX200'],
+    tags: ['CBA', 'Banking', 'Earnings', 'Dividends', 'ASX200'],
     publishedAt: '2h ago',
     insightfulCount: 2847,
     chartData: [155, 156.5, 155.8, 158, 159.5, 158.2, 160.1, 161.8, 162.4],
@@ -36,15 +37,15 @@ const MOCK_FEED: FeedItem[] = [
     sector: 'Monetary Policy',
     category: 'Central Bank',
     sectorColor: '#d4a843',
-    headline: 'RBA Holds Cash Rate at 4.10% — Board Signals Possible Cut in November if Inflation Moderates',
+    headline: 'RBA Holds Cash Rate at 4.10% — Board Signals Possible Cut in November',
     teaser: 'The RBA voted 6-3 to hold at 4.10%, with dissenting members favouring an immediate 25bp cut amid softening labour market data.',
-    script: 'The Reserve Bank of Australia held its cash rate at 4.10% at today\'s October board meeting, with a 6-3 split vote signalling growing internal pressure to ease. Board dissenters cited trimmed mean CPI moderating to 3.2% and unemployment rising to 4.3%. The statement shifted language to acknowledge "disinflation progress." OIS markets now price a 68% probability of a 25 basis point cut at the November meeting. Source: Reserve Bank of Australia.',
+    script: "The Reserve Bank of Australia held its cash rate at 4.10% at today's October board meeting, with a 6-3 split vote. Board dissenters cited trimmed mean CPI moderating to 3.2% and unemployment rising to 4.3%. OIS markets now price a 68% probability of a 25 basis point cut at the November meeting. Source: Reserve Bank of Australia.",
     source: 'Reserve Bank of Australia',
     sourceType: 'OFFICIAL',
     sourceUrl: 'https://www.rba.gov.au',
     change: null,
     price: null,
-    tags: ['RBA', 'cash-rate', 'monetary-policy', 'inflation', 'AUD'],
+    tags: ['RBA', 'Interest Rates', 'Monetary Policy', 'Inflation', 'AUD'],
     publishedAt: '45m ago',
     insightfulCount: 5921,
     chartData: null,
@@ -55,19 +56,19 @@ const MOCK_FEED: FeedItem[] = [
   {
     id: '3',
     ticker: 'BHP',
-    company: 'BHP Group Limited',
+    company: 'BHP Group',
     sector: 'Mining',
     category: 'Operations',
     sectorColor: '#2ed494',
-    headline: 'BHP Iron Ore Shipments Fall 8% on Pilbara Cyclone Disruption; FY Guidance Revised Down',
-    teaser: 'BHP reported Q1 iron ore shipments of 62.1Mt, down 8.3% QoQ, after Cyclone Bianca disrupted Port Hedland operations for 11 days.',
-    script: 'BHP shipped 62.1 million tonnes of iron ore in the September quarter, an 8.3% decline quarter-on-quarter after Cyclone Bianca disrupted Port Hedland operations for 11 days in August. Full-year guidance was revised to 250–255Mt from 255–265Mt. Realised iron ore price of USD $89.40 per tonne was 6.2% below the prior year period. BHP shares fell 2.3% on the announcement, with operations now fully resumed. Source: BHP Group Limited.',
+    headline: 'BHP Iron Ore Shipments Fall 8% on Pilbara Cyclone Disruption; FY Guidance Cut',
+    teaser: 'BHP reported Q1 iron ore shipments of 62.1Mt, down 8.3% QoQ, after Cyclone Bianca disrupted Port Hedland for 11 days.',
+    script: 'BHP shipped 62.1 million tonnes of iron ore in the September quarter, an 8.3% decline quarter-on-quarter after Cyclone Bianca disrupted Port Hedland operations for 11 days. Full-year guidance was revised to 250–255Mt from 255–265Mt. Realised iron ore price of USD $89.40 per tonne was 6.2% below the prior year. Source: BHP Group Limited.',
     source: 'BHP Investor Relations',
     sourceType: 'OFFICIAL',
     sourceUrl: 'https://www.bhp.com/investors',
     change: -2.30,
     price: 44.82,
-    tags: ['BHP', 'iron-ore', 'mining', 'Pilbara', 'commodities'],
+    tags: ['BHP', 'Mining', 'Iron Ore', 'Pilbara', 'Commodities'],
     publishedAt: '3h ago',
     insightfulCount: 1243,
     chartData: [47.5, 47.1, 46.4, 45.9, 45.2, 44.6, 44.1, 44.82],
@@ -78,19 +79,19 @@ const MOCK_FEED: FeedItem[] = [
   {
     id: '4',
     ticker: 'WDS',
-    company: 'Woodside Energy Group',
+    company: 'Woodside Energy',
     sector: 'Energy',
     category: 'M&A',
     sectorColor: '#f97316',
     headline: 'Woodside in Advanced Talks to Acquire US LNG Terminal Stake for USD $2.35B',
-    teaser: 'Woodside is in exclusive negotiations for a 49% stake in a Louisiana LNG export terminal, potentially doubling its global LNG capacity.',
-    script: 'Woodside Energy confirmed it is in exclusive negotiations to acquire a 49% interest in the Calcasieu Pass 2 LNG terminal in Louisiana for USD $2.35 billion. The deal would add 5.1 million tonnes per annum of LNG capacity, nearly doubling Woodside\'s 5.5 Mtpa export position. Funding would be drawn from existing credit facilities and a proposed AUD $1.2 billion equity raise. Completion is expected in H1 2025, subject to FIRB and US FERC approval. Source: Australian Financial Review.',
+    teaser: 'Woodside is in exclusive negotiations for a 49% stake in a Louisiana LNG terminal, potentially doubling its global LNG capacity.',
+    script: 'Woodside Energy confirmed exclusive negotiations to acquire a 49% interest in the Calcasieu Pass 2 LNG terminal in Louisiana for USD $2.35 billion. The deal would add 5.1 Mtpa of capacity, nearly doubling its 5.5 Mtpa export position. Completion is expected in H1 2025, subject to FIRB and US FERC approval. Source: Australian Financial Review.',
     source: 'Australian Financial Review',
     sourceType: 'TIER_1_MEDIA',
     sourceUrl: 'https://www.afr.com',
     change: 2.81,
     price: 24.12,
-    tags: ['WDS', 'LNG', 'energy', 'M&A', 'USA'],
+    tags: ['WDS', 'Energy', 'LNG', 'M&A', 'USA'],
     publishedAt: '1h ago',
     insightfulCount: 892,
     chartData: [22.8, 23.0, 23.3, 23.6, 23.9, 24.1, 24.12],
@@ -100,43 +101,20 @@ const MOCK_FEED: FeedItem[] = [
   },
   {
     id: '5',
-    ticker: 'ASX',
-    company: 'ASX Limited',
-    sector: 'Exchange',
-    category: 'Infrastructure',
-    sectorColor: '#a78bfa',
-    headline: 'ASX CHESS Replacement Approved: $250M DTCC-Backed System Goes Live Q3 2025',
-    teaser: 'After a failed blockchain attempt, ASX\'s board approved the DTCC-backed CHESS replacement, with phased migration beginning September 2025.',
-    script: 'The ASX board approved the DTCC DASL-backed replacement for its legacy CHESS clearing system, at a total cost of AUD $250 million. The phased migration begins September 2025, targeting full cutover in Q1 2026. This follows the 2022 abandonment of a DLT-based system after a $250 million write-down. The new architecture is deployed across 17 global exchanges. ASX expects the transition to reduce per-trade processing costs by 34%. Source: The Australian.',
-    source: 'The Australian',
-    sourceType: 'TIER_1_MEDIA',
-    sourceUrl: 'https://www.theaustralian.com.au',
-    change: 0.65,
-    price: 63.40,
-    tags: ['ASX', 'CHESS', 'fintech', 'infrastructure', 'exchange'],
-    publishedAt: '5h ago',
-    insightfulCount: 3102,
-    chartData: [62.1, 62.5, 62.9, 63.0, 63.2, 63.4],
-    videoStatus: 'PENDING',
-    isInsightful: false,
-    isSaved: true,
-  },
-  {
-    id: '6',
     ticker: 'GOLD',
     company: 'Gold Spot',
     sector: 'Commodities',
     category: 'Market Data',
     sectorColor: '#d4a843',
     headline: 'Gold Hits USD $3,298/oz — Safe Haven Demand Surges on Fed Pivot Speculation',
-    teaser: 'Gold extended its rally to a record high of USD $3,298/oz, up 24% YTD, as traders price in a faster-than-expected Fed easing cycle.',
-    script: 'Gold spot prices reached a record USD $3,298 per troy ounce in Asian trading, extending year-to-date gains to 24.3%. The rally is driven by expectations the US Federal Reserve will deliver 75 basis points of cuts in the current cycle, with real yields on 10-year TIPS falling to negative 0.18%. Central bank gold purchases reached 1,037 tonnes in 2023, the second-highest on record. Australian producers Newmont and Northern Star are both trading at 52-week highs. Source: LBMA Gold Price.',
+    teaser: 'Gold extended its rally to USD $3,298/oz, up 24% YTD, as traders price in a faster-than-expected Fed easing cycle.',
+    script: 'Gold spot prices reached a record USD $3,298 per troy ounce, extending year-to-date gains to 24.3%. Real yields on 10-year TIPS fell to negative 0.18%. Central bank gold purchases reached 1,037 tonnes in 2023, the second-highest on record. Australian producers Newmont and Northern Star are both at 52-week highs. Source: LBMA Gold Price.',
     source: 'LBMA',
     sourceType: 'MARKET_DATA',
     sourceUrl: 'https://www.lbma.org.uk',
     change: 0.42,
     price: 3298,
-    tags: ['gold', 'commodities', 'Fed', 'safe-haven', 'precious-metals'],
+    tags: ['Gold', 'Commodities', 'Fed', 'Safe Haven', 'Precious Metals'],
     publishedAt: '30m ago',
     insightfulCount: 4521,
     chartData: [3100, 3140, 3175, 3210, 3245, 3270, 3298],
@@ -144,29 +122,85 @@ const MOCK_FEED: FeedItem[] = [
     isInsightful: true,
     isSaved: false,
   },
+  {
+    id: '6',
+    ticker: 'ASX',
+    company: 'ASX Limited',
+    sector: 'Exchange',
+    category: 'Infrastructure',
+    sectorColor: '#a78bfa',
+    headline: 'ASX CHESS Replacement Approved: $250M DTCC-Backed System Goes Live Q3 2025',
+    teaser: "After a failed blockchain attempt, ASX's board approved the DTCC-backed CHESS replacement with phased migration from September 2025.",
+    script: "The ASX board approved the DTCC DASL-backed CHESS replacement at a cost of AUD $250 million. The phased migration begins September 2025, targeting full cutover in Q1 2026. This follows the 2022 abandonment of a DLT-based system after a $250 million write-down. ASX expects a 34% reduction in per-trade processing costs. Source: The Australian.",
+    source: 'The Australian',
+    sourceType: 'TIER_1_MEDIA',
+    sourceUrl: 'https://www.theaustralian.com.au',
+    change: 0.65,
+    price: 63.40,
+    tags: ['ASX', 'CHESS', 'Fintech', 'Infrastructure', 'Exchange'],
+    publishedAt: '5h ago',
+    insightfulCount: 3102,
+    chartData: [62.1, 62.5, 62.9, 63.0, 63.2, 63.4],
+    videoStatus: 'PENDING',
+    isInsightful: false,
+    isSaved: true,
+  },
 ]
 
-export default function FeedPage() {
-  const [items, setItems] = useState<FeedItem[]>(MOCK_FEED)
-  const [cardHeight, setCardHeight] = useState(0)
+// ── Refresh interval: 60 seconds ──────────────────────────────────────────────
+const REFRESH_MS = 60_000
 
+export default function FeedPage() {
+  const [items, setItems]           = useState<FeedItem[]>(MOCK_FEED)
+  const [cardHeight, setCardHeight] = useState(0)
+  const [isLive, setIsLive]         = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Measure available card height
   useEffect(() => {
-    // header 48 + ticker 27 + nav 58 = 133
-    const update = () => setCardHeight(window.innerHeight - 133)
+    const update = () => setCardHeight(window.innerHeight - 133) // header48+ticker27+nav58
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
 
+  // Fetch live data from /api/feed
+  const fetchFeed = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true)
+    try {
+      const res = await fetch('/api/feed?pageSize=30')
+      if (!res.ok) return
+      const json = await res.json()
+
+      if (json.source === 'live' && json.data?.length > 0) {
+        setItems(json.data)
+        setIsLive(true)
+        setLastRefresh(new Date())
+      }
+      // If source === 'mock' or empty, keep existing items (mock fallback stays)
+    } catch {
+      // network failure — stay on mock
+    } finally {
+      if (!silent) setRefreshing(false)
+    }
+  }, [])
+
+  // Initial fetch + polling
+  useEffect(() => {
+    fetchFeed(true)
+    intervalRef.current = setInterval(() => fetchFeed(true), REFRESH_MS)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+  }, [fetchFeed])
+
   const handleInsightful = useCallback((id: string) => {
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? {
-              ...item,
-              isInsightful: !item.isInsightful,
-              insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1),
-            }
+          ? { ...item, isInsightful: !item.isInsightful, insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) }
           : item
       )
     )
@@ -178,31 +212,64 @@ export default function FeedPage() {
     )
   }, [])
 
-  const handleShare = useCallback(
-    (id: string) => {
-      const item = items.find((i) => i.id === id)
-      if (item && typeof navigator !== 'undefined' && navigator.share) {
-        navigator.share({ title: item.headline, text: item.teaser }).catch(() => {})
-      }
-    },
-    [items]
-  )
+  const handleShare = useCallback((id: string) => {
+    const item = items.find((i) => i.id === id)
+    if (item && navigator.share) navigator.share({ title: item.headline, text: item.teaser }).catch(() => {})
+  }, [items])
 
   if (cardHeight === 0) return null
 
   return (
-    <div className="feed-scroll h-full">
-      {items.map((item) => (
-        <div key={item.id} className="feed-item" style={{ height: cardHeight }}>
-          <VideoCard
-            item={item}
-            height={cardHeight}
-            onInsightful={handleInsightful}
-            onSave={handleSave}
-            onShare={handleShare}
-          />
-        </div>
-      ))}
+    <div className="relative h-full">
+      {/* Live status pill */}
+      <div
+        className="absolute top-2 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+        style={{
+          background: isLive ? 'rgba(46,212,148,0.12)' : 'rgba(74,88,120,0.15)',
+          border: `1px solid ${isLive ? 'rgba(46,212,148,0.3)' : 'rgba(74,88,120,0.3)'}`,
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        {refreshing ? (
+          <RefreshCw size={9} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
+        ) : isLive ? (
+          <Wifi size={9} style={{ color: 'var(--green)' }} />
+        ) : (
+          <WifiOff size={9} style={{ color: 'var(--text-muted)' }} />
+        )}
+        <span
+          className="font-mono text-[9px] font-bold tracking-widest uppercase"
+          style={{ color: isLive ? 'var(--green)' : 'var(--text-muted)' }}
+        >
+          {isLive ? 'Live' : 'Demo'}
+        </span>
+        {lastRefresh && (
+          <span className="font-mono text-[8px]" style={{ color: 'var(--text-faint)' }}>
+            {relativeSeconds(lastRefresh)}
+          </span>
+        )}
+      </div>
+
+      {/* Snap-scroll feed */}
+      <div className="feed-scroll h-full">
+        {items.map((item) => (
+          <div key={item.id} className="feed-item" style={{ height: cardHeight }}>
+            <VideoCard
+              item={item}
+              height={cardHeight}
+              onInsightful={handleInsightful}
+              onSave={handleSave}
+              onShare={handleShare}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   )
+}
+
+function relativeSeconds(date: Date): string {
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (secs < 60) return `${secs}s ago`
+  return `${Math.floor(secs / 60)}m ago`
 }
