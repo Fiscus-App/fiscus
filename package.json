@@ -11,8 +11,7 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "ingest": "tsx src/lib/ingestion/run.ts",
-    "ingest:batch": "PROCESS_BATCH=20 tsx src/lib/ingestion/run.ts"
+    "ingest": "tsx src/lib/ingestion/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
