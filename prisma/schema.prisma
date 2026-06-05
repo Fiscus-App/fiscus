@@ -189,12 +189,11 @@ model Article {
   credibilityScore Float @default(1.0)
   summary       String?
   videoScriptId String?  @unique
-  videoId       String?  @unique
 
-  source    Source       @relation(fields: [sourceId], references: [id])
-  script    VideoScript? @relation(fields: [videoScriptId], references: [id])
-  video     Video?       @relation(fields: [videoId], references: [id])
-  jobEntry  IngestionJob? @relation(fields: [id], references: [articleId])
+  source    Source        @relation(fields: [sourceId], references: [id])
+  script    VideoScript?  @relation(fields: [videoScriptId], references: [id])
+  video     Video?
+  jobEntry  IngestionJob?
 
   @@index([sourceId])
   @@index([publishedAt])
@@ -356,8 +355,8 @@ model IngestionJob {
   completedAt DateTime?
   createdAt   DateTime  @default(now())
 
-  source  Source  @relation(fields: [sourceId], references: [id])
-  article Article?
+  source  Source   @relation(fields: [sourceId], references: [id])
+  article Article? @relation(fields: [articleId], references: [id])
 
   @@index([sourceId])
   @@index([status])
