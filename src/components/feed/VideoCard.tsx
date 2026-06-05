@@ -3,21 +3,9 @@
 import { useState, useCallback } from 'react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import {
-  Lightbulb,
-  Bookmark,
-  Share2,
-  Clapperboard,
-  Play,
-  Loader2,
-  Sparkles,
-  Newspaper,
-  Clock,
-  Info,
-  ExternalLink,
-  ChevronDown,
-  CheckCircle2,
+  Heart, Bookmark, Share2, Clapperboard, Play,
+  Loader2, Music2, ChevronUp, ChevronDown,
 } from 'lucide-react'
-import clsx from 'clsx'
 import { SourceBadge } from './SourceBadge'
 import type { FeedItem } from '@/types'
 
@@ -30,19 +18,33 @@ interface Props {
 }
 
 export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props) {
-  const [aiScript, setAiScript] = useState<string | null>(null)
+  const [expanded, setExpanded]   = useState(false)
+  const [aiScript, setAiScript]   = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
-  const [aiDone, setAiDone] = useState(false)
-  const [videoGenerating, setVideoGenerating] = useState(false)
-  const [videoReady, setVideoReady] = useState(item.videoStatus === 'COMPLETE')
-  const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [aiDone, setAiDone]       = useState(false)
+  const [playing, setPlaying]     = useState(false)
+  const [progress, setProgress]   = useState(0)
 
-  const chartColor =
-    item.change != null ? (item.change >= 0 ? '#2ed494' : '#ff5252') : '#5b8af5'
-  const chartData = item.chartData?.map((v) => ({ v })) ?? []
+  const isUp       = item.change != null && item.change >= 0
+  const chartColor = item.change != null ? (isUp ? '#2ed494' : '#ff5252') : '#5b8af5'
+  const chartData  = item.chartData?.map((v) => ({ v })) ?? []
+  const displayScript = aiDone && aiScript ? aiScript : item.script
 
-  const handleGenerateAI = useCallback(async () => {
+  // ── Play animation ────────────────────────────────────────────────────────
+  const handlePlay = useCallback(() => {
+    if (playing) return
+    setPlaying(true); setProgress(0)
+    const start = performance.now()
+    const tick = (now: number) => {
+      const pct = Math.min((now - start) / 15000, 1)
+      setProgress(pct * 100)
+      if (pct < 1) requestAnimationFrame(tick); else setPlaying(false)
+    }
+    requestAnimationFrame(tick)
+  }, [playing])
+
+  // ── AI script stream ──────────────────────────────────────────────────────
+  const handleAI = useCallback(async () => {
     if (aiLoading || aiDone) return
     setAiLoading(true)
     try {
@@ -55,7 +57,7 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
           change: item.change, price: item.price, source: item.source,
         }),
       })
-      if (!res.ok || !res.body) throw new Error('Stream failed')
+      if (!res.ok || !res.body) throw new Error()
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let text = ''
@@ -68,283 +70,256 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
       }
       setAiDone(true)
     } catch {
-      setAiScript('Unable to generate live briefing. The preview above is sourced from verified financial reporting.')
-      setAiDone(true)
+      setAiScript(item.script); setAiDone(true)
     } finally {
       setAiLoading(false)
     }
   }, [aiLoading, aiDone, item])
 
-  const handleGenVideo = useCallback(async () => {
-    if (videoGenerating || videoReady) return
-    setVideoGenerating(true)
-    try {
-      await fetch('/api/videos/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ articleId: item.id }),
-      })
-      await new Promise((r) => setTimeout(r, 7000))
-      setVideoReady(true)
-    } catch { /* silent */ } finally {
-      setVideoGenerating(false)
-    }
-  }, [videoGenerating, videoReady, item.id])
-
-  const handlePlay = useCallback(() => {
-    if (playing) return
-    setPlaying(true)
-    setProgress(0)
-    const duration = 15000
-    const start = performance.now()
-    const tick = (now: number) => {
-      const pct = Math.min((now - start) / duration, 1)
-      setProgress(pct * 100)
-      if (pct < 1) requestAnimationFrame(tick)
-      else setPlaying(false)
-    }
-    requestAnimationFrame(tick)
-  }, [playing])
+  const toggleExpand = () => {
+    const next = !expanded
+    setExpanded(next)
+    if (next && !aiDone) handleAI()
+  }
 
   return (
-    <div className="flex flex-col overflow-hidden relative" style={{ height, background: 'var(--bg)' }}>
+    <div className="relative overflow-hidden select-none" style={{ height, background: '#07091a' }}>
 
-      {/* ── Visual header ──────────────────────────────────────── */}
-      <div
-        className="flex-shrink-0 relative overflow-hidden chart-grid"
-        style={{ height: 184, background: 'var(--bg-3)', borderBottom: '1px solid var(--line)' }}
-      >
-        <div
-          className="scan-line absolute left-0 right-0 pointer-events-none"
-          style={{ height: 1, background: 'rgba(255,255,255,0.04)' }}
-        />
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{ background: 'linear-gradient(180deg, rgba(7,9,26,0.3) 0%, transparent 45%, rgba(7,9,26,0.55) 100%)' }}
-        />
+      {/* ══ FULL-SCREEN BACKGROUND ════════════════════════════════════════ */}
+      <div className="absolute inset-0">
+        {/* Grid lines */}
+        <div className="absolute inset-0 chart-grid" style={{ opacity: 0.35 }} />
 
-        <div className="absolute inset-0 p-3.5 flex flex-col justify-between">
-          {/* Top row */}
-          <div className="flex items-start justify-between">
-            <div>
-              <SourceBadge source={item.source} credibility={item.sourceType} />
-              <div className="mt-1.5 font-mono text-[9.5px] tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                {item.publishedAt} · {item.category}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={videoReady ? handlePlay : handleGenVideo}
-                className="w-9 h-9 rounded-full flex items-center justify-center transition-all border backdrop-blur-md"
-                style={{
-                  borderColor: playing ? 'rgba(212,168,67,0.45)' : 'rgba(255,255,255,0.14)',
-                  background: playing ? 'rgba(212,168,67,0.18)' : 'rgba(7,9,26,0.65)',
-                  color: playing ? 'var(--gold)' : 'var(--text-secondary)',
-                  boxShadow: playing ? '0 0 12px rgba(212,168,67,0.22)' : 'none',
-                }}
-                title={videoReady ? 'Play briefing' : 'Generate video'}
-              >
-                {videoGenerating ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : videoReady ? (
-                  <Play size={15} fill="currentColor" />
-                ) : (
-                  <Clapperboard size={15} />
-                )}
-              </button>
-              <div className="flex items-center gap-1.5 font-mono text-[9px] tracking-widest" style={{ color: 'var(--text-muted)' }}>
-                <span className="live-dot inline-block w-1.5 h-1.5 rounded-full" style={{ background: 'var(--green)' }} />
-                LIVE
-              </div>
-            </div>
-          </div>
+        {/* Scan line */}
+        <div className="scan-line absolute left-0 right-0 pointer-events-none"
+          style={{ height: 1, background: 'rgba(255,255,255,0.03)' }} />
 
-          {/* Price + chart */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span
-                className="font-mono text-[11px] font-semibold px-1.5 py-0.5 rounded"
-                style={{ color: item.sectorColor, background: `${item.sectorColor}1a`, letterSpacing: '0.07em' }}
-              >
-                {item.ticker}
-              </span>
-              <span className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-                {item.sector}
-              </span>
-            </div>
-            <div className="flex items-baseline gap-2.5 mb-2">
-              {item.price != null && (
-                <span className="font-mono font-semibold" style={{ fontSize: 20, letterSpacing: '-0.02em' }}>
-                  ${item.price.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              )}
-              {item.change != null && (
-                <span className="font-mono text-[13px] font-semibold" style={{ color: item.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                  {item.change >= 0 ? '▲' : '▼'} {Math.abs(item.change).toFixed(2)}%
-                </span>
-              )}
-            </div>
-            {chartData.length > 0 && (
-              <div style={{ height: 42 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                    <defs>
-                      <linearGradient id={`g-${item.id}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={chartColor} stopOpacity={0.28} />
-                        <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke={chartColor} strokeWidth={1.5} fill={`url(#g-${item.id})`} dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div
-          className="absolute bottom-0 left-0 h-[2px]"
-          style={{
-            width: `${progress}%`,
-            background: 'linear-gradient(90deg, var(--gold), rgba(212,168,67,0.55))',
-            transition: playing ? 'width 0.1s linear' : 'none',
-          }}
-        />
-        {(videoReady || playing) && (
-          <div className="absolute bottom-2 right-3 font-mono text-[9px] tracking-wide flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-            <Play size={8} fill="currentColor" />
-            {playing ? 'Playing 15s briefing...' : 'Ready to play'}
+        {/* Full-bleed chart */}
+        {chartData.length > 0 && (
+          <div className="absolute inset-0" style={{ opacity: 0.28 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                <defs>
+                  <linearGradient id={`bg-${item.id}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColor} stopOpacity={0.6} />
+                    <stop offset="100%" stopColor={chartColor} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <Area type="monotone" dataKey="v" stroke={chartColor}
+                  strokeWidth={1.5} fill={`url(#bg-${item.id})`} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         )}
-      </div>
 
-      {/* ── Scrollable body ────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto px-4 pt-3.5 scroll-y" style={{ paddingRight: 68 }}>
-        <h2 className="font-serif leading-snug mb-3" style={{ fontSize: 16, fontWeight: 500 }}>
-          {item.headline}
-        </h2>
+        {/* Sector color accent glow */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: `radial-gradient(ellipse 80% 60% at 50% 40%, ${item.sectorColor}0d 0%, transparent 70%)`,
+        }} />
 
-        {/* AI Briefing */}
-        <div className="rounded-xl p-3.5 mb-3" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
-          <div className="flex items-center gap-2 mb-2.5" style={{ color: aiDone ? 'var(--gold)' : 'var(--text-muted)' }}>
-            {aiDone ? <CheckCircle2 size={13} strokeWidth={2.5} /> : <Sparkles size={13} strokeWidth={2} />}
-            <span className="text-[9.5px] font-bold uppercase tracking-widest">
-              {aiDone ? 'AI Briefing · Live Generated' : 'Preview Briefing'}
+        {/* Centre financial display */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
+          style={{ paddingBottom: '32%' }}>
+          <span className="font-mono text-[11px] font-bold tracking-[0.18em] uppercase mb-3 px-3 py-1 rounded-md"
+            style={{ color: item.sectorColor, background: `${item.sectorColor}1a`, border: `1px solid ${item.sectorColor}30` }}>
+            {item.ticker} · {item.sector}
+          </span>
+
+          {item.price != null ? (
+            <>
+              <span className="font-mono font-bold" style={{
+                fontSize: 54, letterSpacing: '-0.03em',
+                color: 'rgba(238,242,255,0.88)',
+                textShadow: '0 2px 40px rgba(0,0,0,0.9)',
+              }}>
+                ${item.price.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+              {item.change != null && (
+                <span className="font-mono font-bold mt-1" style={{
+                  fontSize: 20, color: isUp ? '#2ed494' : '#ff5252',
+                  textShadow: `0 0 20px ${isUp ? 'rgba(46,212,148,0.5)' : 'rgba(255,82,82,0.5)'}`,
+                }}>
+                  {isUp ? '▲' : '▼'} {Math.abs(item.change).toFixed(2)}%
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="font-serif font-medium text-center px-10 opacity-50" style={{ fontSize: 20, color: '#eef2ff', lineHeight: 1.5 }}>
+              {item.company}
             </span>
-          </div>
-          <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            {aiDone && aiScript ? aiScript : item.script}
-            {aiLoading && <span className="cursor ml-0.5">|</span>}
-          </p>
-          {!aiDone && (
-            <button
-              onClick={handleGenerateAI}
-              disabled={aiLoading}
-              className="mt-3 px-3 py-1.5 rounded-lg text-[11px] font-semibold tracking-wide flex items-center gap-1.5 transition-all disabled:opacity-40"
-              style={{ background: 'var(--gold-a)', color: 'var(--gold)', border: '1px solid var(--gold-b)' }}
-            >
-              {aiLoading
-                ? <><Loader2 size={11} className="animate-spin" /> Generating...</>
-                : <><Sparkles size={11} /> Regenerate with Live AI</>
-              }
-            </button>
           )}
         </div>
 
-        {/* Tags */}
-        <div className="flex flex-wrap gap-1.5 mb-4">
+        {/* Top gradient — header fade */}
+        <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{
+          height: 120,
+          background: 'linear-gradient(180deg, rgba(7,9,26,0.9) 0%, transparent 100%)',
+        }} />
+        {/* Bottom gradient — text readability */}
+        <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{
+          height: '62%',
+          background: 'linear-gradient(0deg, rgba(7,9,26,1) 0%, rgba(7,9,26,0.92) 35%, rgba(7,9,26,0.6) 60%, transparent 100%)',
+        }} />
+      </div>
+
+      {/* ══ SOURCE BADGE — top left ═══════════════════════════════════════ */}
+      <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
+        <SourceBadge source={item.source} credibility={item.sourceType} />
+        <div className="flex items-center gap-1.5 font-mono text-[9px] tracking-widest"
+          style={{ color: 'rgba(255,255,255,0.45)' }}>
+          <span className="live-dot inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+            style={{ background: '#2ed494' }} />
+          LIVE
+        </div>
+      </div>
+
+      {/* ══ CENTRE PLAY BUTTON ════════════════════════════════════════════ */}
+      {!playing && item.videoStatus === 'COMPLETE' && (
+        <button onClick={handlePlay}
+          className="absolute flex items-center justify-center rounded-full z-10"
+          style={{
+            top: '42%', left: '50%', transform: 'translate(-50%, -50%)',
+            width: 68, height: 68,
+            background: 'rgba(212,168,67,0.18)',
+            border: '2px solid rgba(212,168,67,0.55)',
+            backdropFilter: 'blur(12px)',
+            boxShadow: '0 0 30px rgba(212,168,67,0.2)',
+          }}>
+          <Play size={26} fill="var(--gold)" style={{ color: 'var(--gold)', marginLeft: 4 }} />
+        </button>
+      )}
+
+      {/* ══ RIGHT SIDEBAR ═════════════════════════════════════════════════ */}
+      <div className="absolute right-3 flex flex-col items-center gap-5 z-10"
+        style={{ bottom: expanded ? 280 : 108 , transition: 'bottom 0.3s ease' }}>
+
+        {/* Avatar */}
+        <div className="flex flex-col items-center">
+          <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-[13px]"
+            style={{ background: 'var(--gold-a)', border: '2px solid var(--gold)', color: 'var(--gold)' }}>
+            {item.ticker.slice(0, 2)}
+          </div>
+          <div className="w-5 h-5 rounded-full flex items-center justify-center -mt-2.5"
+            style={{ background: 'var(--gold)', border: '2px solid #07091a' }}>
+            <span style={{ fontSize: 11, color: '#07091a', fontWeight: 900, lineHeight: 1 }}>+</span>
+          </div>
+        </div>
+
+        {/* Insightful / Heart */}
+        <button onClick={() => onInsightful(item.id)}
+          className="flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer p-0">
+          <Heart size={32} strokeWidth={1.5}
+            fill={item.isInsightful ? 'var(--gold)' : 'none'}
+            style={{ color: item.isInsightful ? 'var(--gold)' : 'white',
+              filter: item.isInsightful ? 'drop-shadow(0 0 8px rgba(212,168,67,0.6))' : 'none' }} />
+          <span className="font-bold text-[12px]" style={{ color: 'white' }}>
+            {item.insightfulCount > 999
+              ? `${(item.insightfulCount / 1000).toFixed(1)}k`
+              : item.insightfulCount}
+          </span>
+        </button>
+
+        {/* Save / Bookmark */}
+        <button onClick={() => onSave(item.id)}
+          className="flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer p-0">
+          <Bookmark size={30} strokeWidth={1.5}
+            fill={item.isSaved ? 'white' : 'none'} style={{ color: 'white' }} />
+          <span className="font-bold text-[12px]" style={{ color: 'white' }}>
+            {item.isSaved ? 'Saved' : 'Save'}
+          </span>
+        </button>
+
+        {/* Share */}
+        <button onClick={() => onShare(item.id)}
+          className="flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer p-0">
+          <Share2 size={28} strokeWidth={1.5} style={{ color: 'white' }} />
+          <span className="font-bold text-[12px]" style={{ color: 'white' }}>Share</span>
+        </button>
+
+        {/* Spinning record */}
+        <div className="w-10 h-10 rounded-full flex items-center justify-center"
+          style={{
+            background: 'linear-gradient(135deg, #1e2a44 0%, #07091a 100%)',
+            border: '2px solid rgba(255,255,255,0.25)',
+            animation: playing ? 'spin 3s linear infinite' : 'none',
+          }}>
+          <div className="w-3.5 h-3.5 rounded-full" style={{ background: '#07091a', border: '2px solid rgba(255,255,255,0.3)' }} />
+        </div>
+      </div>
+
+      {/* ══ BOTTOM CONTENT OVERLAY ════════════════════════════════════════ */}
+      <div className="absolute bottom-0 left-0 z-10" style={{ right: 72, padding: '0 16px 12px' }}>
+
+        {/* @handle · time */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="font-sans font-bold text-[13px]" style={{ color: 'white' }}>
+            @fiscus
+          </span>
+          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11 }}>·</span>
+          <span className="font-mono text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            {item.publishedAt}
+          </span>
+        </div>
+
+        {/* Headline */}
+        <p className="font-sans font-bold leading-snug mb-2"
+          style={{ fontSize: 14, color: 'rgba(238,242,255,0.97)', textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}>
+          {item.headline}
+        </p>
+
+        {/* AI description — expandable */}
+        <div className="mb-2">
+          <p className={`text-[13px] leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}
+            style={{ color: 'rgba(238,242,255,0.72)' }}>
+            {displayScript}
+            {aiLoading && <span className="cursor ml-0.5">|</span>}
+          </p>
+
+          <button onClick={toggleExpand}
+            className="flex items-center gap-0.5 mt-0.5 bg-transparent border-none cursor-pointer p-0"
+            style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 600 }}>
+            {aiLoading
+              ? <><Loader2 size={11} className="animate-spin" style={{ marginRight: 4 }} />Generating briefing...</>
+              : expanded
+                ? <><ChevronUp size={13} /> See less</>
+                : <>... <ChevronDown size={13} /> See more</>
+            }
+          </button>
+        </div>
+
+        {/* Hashtags */}
+        <div className="flex items-center gap-2 overflow-x-auto mb-3" style={{ scrollbarWidth: 'none' }}>
           {item.tags.map((tag) => (
-            <span key={tag} className="text-[10.5px] px-2 py-0.5 rounded-md font-medium"
-              style={{ background: 'var(--bg-3)', color: 'var(--text-muted)', border: '1px solid var(--line)' }}>
+            <span key={tag} className="font-sans font-semibold text-[12px] whitespace-nowrap"
+              style={{ color: 'rgba(238,242,255,0.8)' }}>
               #{tag}
             </span>
           ))}
         </div>
 
-        {/* Source footer */}
-        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                <Newspaper size={11} strokeWidth={2} style={{ flexShrink: 0 }} />
-                <span>Source: </span>
-                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{item.source}</span>
-              </div>
-              <div className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                <Clock size={11} strokeWidth={2} style={{ flexShrink: 0 }} />
-                Published {item.publishedAt}
-              </div>
-              <div className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-faint)' }}>
-                <Info size={10} strokeWidth={2} style={{ flexShrink: 0 }} />
-                Summaries are informational only — not financial advice
-              </div>
+        {/* Scrolling audio bar */}
+        <div className="flex items-center gap-2 overflow-hidden">
+          <Music2 size={12} style={{ color: 'rgba(255,255,255,0.55)', flexShrink: 0 }} />
+          <div className="overflow-hidden flex-1">
+            <div className="font-mono text-[10px] whitespace-nowrap"
+              style={{ color: 'rgba(255,255,255,0.4)', animation: 'ticker-scroll 14s linear infinite' }}>
+              Fiscus AI Briefing&nbsp;·&nbsp;{item.source}&nbsp;·&nbsp;{item.category}&nbsp;·&nbsp;{item.publishedAt}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+              Fiscus AI Briefing&nbsp;·&nbsp;{item.source}&nbsp;·&nbsp;{item.category}&nbsp;·&nbsp;{item.publishedAt}
             </div>
-            <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[11px] font-semibold flex-shrink-0"
-              style={{ color: 'var(--blue)' }}>
-              View source <ExternalLink size={10} strokeWidth={2.5} />
-            </a>
           </div>
         </div>
-        <div style={{ height: 10 }} />
       </div>
 
-      {/* ── Sidebar actions ────────────────────────────────────── */}
-      <div className="absolute right-3 flex flex-col items-center gap-4" style={{ bottom: 50 }}>
-        <SidebarAction
-          label={item.insightfulCount > 999 ? `${(item.insightfulCount / 1000).toFixed(1)}k` : String(item.insightfulCount)}
-          active={item.isInsightful}
-          onClick={() => onInsightful(item.id)}
-        >
-          <Lightbulb size={19} strokeWidth={item.isInsightful ? 2.5 : 1.8} fill={item.isInsightful ? 'currentColor' : 'none'} />
-        </SidebarAction>
-        <SidebarAction label={item.isSaved ? 'Saved' : 'Save'} active={item.isSaved} onClick={() => onSave(item.id)}>
-          <Bookmark size={19} strokeWidth={item.isSaved ? 2.5 : 1.8} fill={item.isSaved ? 'currentColor' : 'none'} />
-        </SidebarAction>
-        <SidebarAction label="Share" onClick={() => onShare(item.id)}>
-          <Share2 size={18} strokeWidth={1.8} />
-        </SidebarAction>
-        <SidebarAction label="Video" onClick={handleGenVideo}>
-          <Clapperboard size={18} strokeWidth={1.8} />
-        </SidebarAction>
+      {/* ══ PROGRESS BAR ══════════════════════════════════════════════════ */}
+      <div className="absolute bottom-0 left-0 right-0 z-20" style={{ height: 2, background: 'rgba(255,255,255,0.06)' }}>
+        <div style={{
+          height: '100%',
+          width: `${progress}%`,
+          background: 'linear-gradient(90deg, var(--gold), rgba(212,168,67,0.5))',
+          transition: playing ? 'width 0.1s linear' : 'none',
+        }} />
       </div>
 
-      {/* ── Scroll hint ────────────────────────────────────────── */}
-      <div className="flex-shrink-0 py-1.5 flex items-center justify-center gap-1.5"
-        style={{ color: 'var(--text-faint)', borderTop: '1px solid var(--line)' }}>
-        <ChevronDown size={12} strokeWidth={2} />
-        <span className="font-mono text-[9.5px] tracking-wider">next briefing</span>
-        <ChevronDown size={12} strokeWidth={2} />
-      </div>
     </div>
-  )
-}
-
-function SidebarAction({
-  children, label, active, onClick,
-}: {
-  children: React.ReactNode
-  label: string
-  active?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1 border-none bg-transparent cursor-pointer p-0"
-      style={{ color: active ? 'var(--gold)' : 'var(--text-secondary)' }}>
-      <div
-        className="w-11 h-11 rounded-full flex items-center justify-center transition-all"
-        style={{
-          background: active ? 'rgba(212,168,67,0.12)' : 'rgba(20,28,48,0.88)',
-          border: `1.5px solid ${active ? 'rgba(212,168,67,0.45)' : 'rgba(255,255,255,0.1)'}`,
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          boxShadow: active ? '0 0 14px rgba(212,168,67,0.18)' : 'none',
-        }}
-      >
-        {children}
-      </div>
-      <span className="font-sans text-[10px] font-semibold tracking-wide">{label}</span>
-    </button>
   )
 }
