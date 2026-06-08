@@ -1,0 +1,44 @@
+name: News Ingestion Pipeline
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    name: Scrape & Process
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ingest articles from all sources
+        run: |
+          curl -s -X POST "${{ vars.VERCEL_URL }}/api/cron/ingest" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 55
+
+      - name: Wait
+        run: sleep 5
+
+      - name: Process batch 1
+        run: |
+          curl -s -X POST "${{ vars.VERCEL_URL }}/api/cron/process" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 55
+
+      - name: Process batch 2
+        run: |
+          curl -s -X POST "${{ vars.VERCEL_URL }}/api/cron/process" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 55
+
+      - name: Process batch 3
+        run: |
+          curl -s -X POST "${{ vars.VERCEL_URL }}/api/cron/process" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 55
