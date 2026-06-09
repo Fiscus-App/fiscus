@@ -18,7 +18,7 @@ export const SOURCES: SourceDefinition[] = [
   {
     id: 'rba-media-releases',
     name: 'Reserve Bank of Australia',
-    url: 'https://www.rba.gov.au',
+    url: 'https://www.rba.gov.au/media-releases',
     rssUrl: 'https://www.rba.gov.au/rss/rss-cb-media-releases.xml',
     type: 'RSS_FEED',
     credibility: 'OFFICIAL',
@@ -28,7 +28,7 @@ export const SOURCES: SourceDefinition[] = [
   {
     id: 'rba-speeches',
     name: 'RBA Speeches',
-    url: 'https://www.rba.gov.au',
+    url: 'https://www.rba.gov.au/speeches',
     rssUrl: 'https://www.rba.gov.au/rss/rss-cb-speeches.xml',
     type: 'RSS_FEED',
     credibility: 'OFFICIAL',
@@ -38,7 +38,7 @@ export const SOURCES: SourceDefinition[] = [
   {
     id: 'rba-decisions',
     name: 'RBA Rate Decisions',
-    url: 'https://www.rba.gov.au',
+    url: 'https://www.rba.gov.au/monetary-policy/decisions',
     rssUrl: 'https://www.rba.gov.au/rss/rss-cb-decisions.xml',
     type: 'RSS_FEED',
     credibility: 'OFFICIAL',

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { TickerTape } from '@/components/markets/TickerTape'
 import { Zap, TrendingUp, Users, Bookmark, Search, Bell } from 'lucide-react'
 import clsx from 'clsx'
@@ -16,8 +17,15 @@ const NAV_ITEMS = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const { data: session } = useSession()
   const [_notif, setNotif] = useState(false)
   const isFeed = pathname.startsWith('/feed')
+
+  const userInitial = session?.user?.name
+    ? session.user.name.charAt(0).toUpperCase()
+    : session?.user?.email
+    ? session.user.email.charAt(0).toUpperCase()
+    : '?'
 
   return (
     <div className="flex flex-col" style={{ height: '100dvh', background: 'var(--bg)', overflow: 'hidden' }}>
@@ -82,7 +90,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/profile"
             className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold"
             style={{ background: 'var(--gold-a)', border: '1px solid var(--gold-c)', color: 'var(--gold)' }}>
-            B
+            {userInitial}
           </Link>
         </div>
       </header>

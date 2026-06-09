@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Playfair_Display, Plus_Jakarta_Sans, IBM_Plex_Mono } from 'next/font/google'
+import { Providers } from '@/components/providers/Providers'
 import './globals.css'
 
 const playfair = Playfair_Display({
@@ -54,7 +55,7 @@ export default function RootLayout({
       className={`${playfair.variable} ${jakarta.variable} ${mono.variable}`}
     >
       <body className="bg-bg text-text-primary antialiased">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

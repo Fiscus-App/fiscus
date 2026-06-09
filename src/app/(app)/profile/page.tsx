@@ -1,21 +1,36 @@
 'use client'
 
+import { useSession, signOut } from 'next-auth/react'
 import { Bell, Shield, HelpCircle, LogOut, ChevronRight, Bookmark, Lightbulb, Eye, Settings } from 'lucide-react'
 
 const STATS = [
-  { label: 'Saved', value: '2', icon: Bookmark },
-  { label: 'Insightful', value: '847', icon: Lightbulb },
-  { label: 'Watched', value: '124', icon: Eye },
+  { label: 'Saved',      value: '—', icon: Bookmark   },
+  { label: 'Insightful', value: '—', icon: Lightbulb  },
+  { label: 'Watched',    value: '—', icon: Eye        },
 ]
 
 const SETTINGS_ROWS = [
-  { label: 'Notifications', sub: 'Manage alerts & briefings', icon: Bell },
-  { label: 'Preferences', sub: 'Feed topics & sectors', icon: Settings },
-  { label: 'Privacy & Security', sub: 'Account security settings', icon: Shield },
-  { label: 'Help & Support', sub: 'FAQs and contact', icon: HelpCircle },
+  { label: 'Notifications',      sub: 'Manage alerts & briefings',   icon: Bell       },
+  { label: 'Preferences',        sub: 'Feed topics & sectors',       icon: Settings   },
+  { label: 'Privacy & Security', sub: 'Account security settings',   icon: Shield     },
+  { label: 'Help & Support',     sub: 'FAQs and contact',            icon: HelpCircle },
 ]
 
+const TIER_LABELS: Record<string, string> = {
+  FREE:       'Fiscus Beta',
+  PRO:        'Fiscus Pro',
+  TEAM:       'Fiscus Teams',
+  ENTERPRISE: 'Enterprise',
+}
+
 export default function ProfilePage() {
+  const { data: session } = useSession()
+
+  const name    = session?.user?.name  ?? 'Guest'
+  const email   = session?.user?.email ?? ''
+  const tier    = (session?.user as any)?.tier ?? 'FREE'
+  const initial = name.charAt(0).toUpperCase()
+
   return (
     <div className="h-full overflow-y-auto scroll-y" style={{ background: 'var(--bg)' }}>
       <div className="px-4 py-6 space-y-5">
@@ -31,13 +46,15 @@ export default function ProfilePage() {
               boxShadow: '0 0 30px rgba(212,168,67,0.15)',
             }}
           >
-            B
+            {initial}
           </div>
           <div className="text-center">
-            <div className="font-serif text-[18px] font-medium">Beast</div>
-            <div className="text-[12px] font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              jacktaknew@gmail.com
-            </div>
+            <div className="font-serif text-[18px] font-medium">{name}</div>
+            {email && (
+              <div className="text-[12px] font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                {email}
+              </div>
+            )}
           </div>
           <div
             className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest"
@@ -77,7 +94,7 @@ export default function ProfilePage() {
               <div className="text-[10px] font-mono font-bold uppercase tracking-widest" style={{ color: 'var(--gold)' }}>
                 Current Plan
               </div>
-              <div className="font-serif text-[16px] font-medium mt-0.5">Fiscus Beta</div>
+              <div className="font-serif text-[16px] font-medium mt-0.5">{TIER_LABELS[tier] ?? 'Fiscus Beta'}</div>
               <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
                 Full access · Free during beta
               </div>
@@ -131,6 +148,7 @@ export default function ProfilePage() {
 
         {/* Sign out */}
         <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
           className="w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-[13px] font-semibold transition-colors"
           style={{
             background: 'var(--bg-2)',

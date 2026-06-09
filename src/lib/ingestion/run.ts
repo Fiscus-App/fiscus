@@ -1,8 +1,17 @@
+// Load .env file before anything else
+import { existsSync, readFileSync } from 'node:fs'
+if (existsSync('.env')) {
+  for (const line of readFileSync('.env', 'utf-8').split('\n')) {
+    const m = line.match(/^([^#][^=]*)=(.*)$/)
+    if (m) process.env[m[1].trim()] ??= m[2].trim()
+  }
+}
+
 /**
  * Local ingestion runner — use this to pull articles on demand.
  * Run with: npm run ingest
  *
- * Requires DATABASE_URL in .env.local
+ * Requires DATABASE_URL and ANTHROPIC_API_KEY in .env
  */
 import { PrismaClient } from '@prisma/client'
 import { ingestAllSources, enrichArticle } from './pipeline'
