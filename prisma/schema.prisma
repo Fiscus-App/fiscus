@@ -27,6 +27,8 @@ model User {
   shares         Share[]
   teamMemberships TeamMember[]
   teamMessages   TeamMessage[]
+  articleSaves          ArticleSave[]
+  articleInsightfulVotes ArticleInsightful[]
 }
 
 enum UserRole {
@@ -194,10 +196,40 @@ model Article {
   script    VideoScript?  @relation(fields: [videoScriptId], references: [id])
   video     Video?
   jobEntry  IngestionJob?
+  saves          ArticleSave[]
+  insightfulVotes ArticleInsightful[]
 
   @@index([sourceId])
   @@index([publishedAt])
   @@index([sector])
+}
+
+model ArticleSave {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  savedAt   DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, articleId])
+  @@index([userId])
+  @@index([articleId])
+}
+
+model ArticleInsightful {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, articleId])
+  @@index([userId])
+  @@index([articleId])
 }
 
 // ─── MARKET DATA ─────────────────────────────────────────────────────

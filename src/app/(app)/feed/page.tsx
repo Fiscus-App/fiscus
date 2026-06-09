@@ -164,14 +164,37 @@ export default function FeedPage() {
   }, [fetchFeed])
 
   const handleInsightful = useCallback((id: string) => {
+    // Optimistic update
     setItems((prev) => prev.map((item) =>
       item.id === id ? { ...item, isInsightful: !item.isInsightful,
         insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) } : item
     ))
+    // Persist to DB (fire and forget — UI already updated)
+    fetch('/api/interactions/insightful', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ articleId: id }),
+    }).catch(() => {
+      // Revert on failure
+      setItems((prev) => prev.map((item) =>
+        item.id === id ? { ...item, isInsightful: !item.isInsightful,
+          insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) } : item
+      ))
+    })
   }, [])
 
   const handleSave = useCallback((id: string) => {
+    // Optimistic update
     setItems((prev) => prev.map((item) => item.id === id ? { ...item, isSaved: !item.isSaved } : item))
+    // Persist to DB
+    fetch('/api/interactions/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ articleId: id }),
+    }).catch(() => {
+      // Revert on failure
+      setItems((prev) => prev.map((item) => item.id === id ? { ...item, isSaved: !item.isSaved } : item))
+    })
   }, [])
 
   const handleShare = useCallback((id: string) => {
