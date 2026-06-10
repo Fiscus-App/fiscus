@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { fetchMarketSummary, MARKET_SYMBOLS } from '@/lib/market/yahoo'
 
+export const runtime = 'edge'
+
 export async function GET() {
   const data = await fetchMarketSummary()
 

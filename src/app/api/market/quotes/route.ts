@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchQuotes } from '@/lib/market/yahoo'
 
+export const runtime = 'edge'
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const raw = searchParams.get('tickers') ?? ''
