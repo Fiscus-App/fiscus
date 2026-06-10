@@ -20,6 +20,7 @@ interface MetaData {
   hasLiveIndices:     boolean
   hasLiveCommodities: boolean
   fxDate:             string | null
+  dataSource?:        string
 }
 
 interface MarketSummary {
@@ -28,11 +29,19 @@ interface MarketSummary {
   fx:          FxData[]
   topMovers:   MoverData[]
   asx:         AsxData | null
-  meta?:       MetaData & { dataSource?: string }
+  meta?:       MetaData
 }
 
-// ── Fallback structure (values shown only before first successful API call) ───
-// These are NOT claimed to be real — the page marks them as indicative.
+interface StocksResponse {
+  topMovers: Array<{ ticker: string; name: string; price: number | null; change: number | null; changeAbs: number | null }>
+  indices:   Array<{ name: string; value: number | null; change: number | null; changeAbs: number | null }>
+  asx:       AsxData | null
+  source:    string
+  fetchedAt: string
+}
+
+// ── Fallback (null values everywhere — no fake prices) ────────────────────────
+
 const FALLBACK: MarketSummary = {
   indices: [
     { name: 'ASX 200',  value: null, change: null, changeAbs: null },
@@ -61,16 +70,16 @@ const FALLBACK: MarketSummary = {
   asx: null,
 }
 
-// ── Sector colours (ASX sector ETFs are not freely available — static) ────────
+// ── Sector colours (no free real-time sector data available) ──────────────────
 const SECTORS = [
-  { name: 'Energy',    change: 0 },
-  { name: 'Materials', change: 0 },
-  { name: 'Financials',change: 0 },
-  { name: 'Health',    change: 0 },
-  { name: 'Tech',      change: 0 },
-  { name: 'REITs',     change: 0 },
-  { name: 'Utilities', change: 0 },
-  { name: 'Consumer',  change: 0 },
+  { name: 'Energy',     change: 0 },
+  { name: 'Materials',  change: 0 },
+  { name: 'Financials', change: 0 },
+  { name: 'Health',     change: 0 },
+  { name: 'Tech',       change: 0 },
+  { name: 'REITs',      change: 0 },
+  { name: 'Utilities',  change: 0 },
+  { name: 'Consumer',   change: 0 },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -114,115 +123,95 @@ function SectionHeader({ title, note }: { title: string; note?: string }) {
   )
 }
 
+// ── Merge stocks/indices from the Edge route into the summary ─────────────────
+
+function mergeStocks(base: MarketSummary, stocks: StocksResponse): MarketSummary {
+  // Update topMovers — preserve base names if stocks entry is missing
+  const byTicker = new Map(stocks.topMovers.map((s) => [s.ticker, s]))
+  const topMovers: MoverData[] = base.topMovers.map((m) => {
+    const s = byTicker.get(m.ticker)
+    return s ? { ticker: m.ticker, name: m.name, price: s.price, change: s.change } : m
+  })
+  // Add any extra tickers the Edge route returned that aren't in base
+  for (const s of stocks.topMovers) {
+    if (!topMovers.find((m) => m.ticker === s.ticker)) {
+      topMovers.push({ ticker: s.ticker, name: s.name, price: s.price, change: s.change })
+    }
+  }
+  topMovers.sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
+
+  // Update indices
+  const byName = new Map(stocks.indices.map((i) => [i.name, i]))
+  const indices: IndexData[] = base.indices.map((idx) => {
+    const i = byName.get(idx.name)
+    return i ? { name: idx.name, value: i.value, change: i.change, changeAbs: i.changeAbs } : idx
+  })
+
+  const hasLiveStocks  = topMovers.some((m) => m.price  !== null)
+  const hasLiveIndices = indices.some((i) => i.value !== null)
+
+  return {
+    ...base,
+    topMovers,
+    indices,
+    asx: stocks.asx ?? base.asx,
+    meta: base.meta
+      ? {
+          ...base.meta,
+          hasLiveStocks,
+          hasLiveIndices,
+          hasAnyLive:  base.meta.hasAnyLive || hasLiveStocks || hasLiveIndices,
+          dataSource:  stocks.source,
+        }
+      : base.meta,
+  }
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MarketsPage() {
-  const [data,    setData]    = useState<MarketSummary>(FALLBACK)
-  const [loading, setLoading] = useState(true)
+  const [data,        setData]        = useState<MarketSummary>(FALLBACK)
+  const [loading,     setLoading]     = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  // Derived from the API meta — which categories have real data
   const meta        = data.meta
   const hasAnyLive  = meta?.hasAnyLive         ?? false
   const stocksLive  = meta?.hasLiveStocks      ?? false
   const fxLive      = meta?.hasLiveFX          ?? false
-  const indicesLive = meta?.hasLiveIndices      ?? false
-  const commodLive  = meta?.hasLiveCommodities  ?? false
+  const indicesLive = meta?.hasLiveIndices     ?? false
+  const commodLive  = meta?.hasLiveCommodities ?? false
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
     try {
-      const res = await fetch('/api/market/summary')
-      if (res.ok) {
-        const json: MarketSummary = await res.json()
-        if (json?.indices && json?.topMovers) {
-          // If server returned no stock data, try patching from browser-side Yahoo Finance
-          const needsStocks = !json.meta?.hasLiveStocks
-          const needsIndices = !json.meta?.hasLiveIndices
+      // Fetch FX/metals (Lambda) and stocks/indices (Edge) in parallel
+      const [summaryRes, stocksRes] = await Promise.all([
+        fetch('/api/market/summary'),
+        fetch('/api/market/stocks'),
+      ])
 
-          if (needsStocks || needsIndices) {
-            const patched = await patchFromYahoo(json)
-            setData(patched)
-          } else {
-            setData(json)
-          }
-          setLastUpdated(new Date())
+      let combined: MarketSummary = FALLBACK
+
+      if (summaryRes.ok) {
+        const summaryData: MarketSummary = await summaryRes.json()
+        if (summaryData?.indices && summaryData?.topMovers) {
+          combined = summaryData
         }
       }
+
+      if (stocksRes.ok) {
+        const stocksData: StocksResponse = await stocksRes.json()
+        if (stocksData?.source !== 'none') {
+          combined = mergeStocks(combined, stocksData)
+        }
+      }
+
+      setData(combined)
+      setLastUpdated(new Date())
     } catch {
-      // keep whatever we already have
+      // keep whatever we have
     } finally {
       if (!silent) setLoading(false)
-    }
-  }
-
-  // Browser-side Yahoo Finance — bypasses server IP blocking.
-  // Only called when the server-side sources (FMP, ASX) have no stock data.
-  async function patchFromYahoo(base: MarketSummary): Promise<MarketSummary> {
-    try {
-      const yahooSymbols = [
-        'CBA.AX', 'BHP.AX', 'WDS.AX', 'RIO.AX', 'FMG.AX', 'CSL.AX', 'NAB.AX', 'ANZ.AX',
-        '^AXJO', '^GSPC', '^N225', '^FTSE',
-      ]
-      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSymbols.join(',')}`
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
-      if (!res.ok) return base
-
-      const json = await res.json()
-      const results: Array<{
-        symbol: string
-        regularMarketPrice: number
-        regularMarketChangePercent: number
-        regularMarketChange: number
-      }> = json?.quoteResponse?.result ?? []
-      if (results.length === 0) return base
-
-      const bySymbol = new Map(results.map((r) => [r.symbol, r]))
-
-      const TICKER_MAP: Record<string, string> = {
-        'CBA.AX': 'CBA', 'BHP.AX': 'BHP', 'WDS.AX': 'WDS', 'RIO.AX': 'RIO',
-        'FMG.AX': 'FMG', 'CSL.AX': 'CSL', 'NAB.AX': 'NAB', 'ANZ.AX': 'ANZ',
-      }
-      const INDEX_MAP: Record<string, string> = {
-        '^AXJO': 'ASX 200', '^GSPC': 'S&P 500', '^N225': 'Nikkei', '^FTSE': 'FTSE 100',
-      }
-
-      const topMovers = base.topMovers.map((m) => {
-        const sym = `${m.ticker}.AX`
-        const q   = bySymbol.get(sym)
-        return q
-          ? { ...m, price: q.regularMarketPrice, change: q.regularMarketChangePercent }
-          : m
-      }).sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
-
-      const indices = base.indices.map((idx) => {
-        const sym = Object.entries(INDEX_MAP).find(([, name]) => name === idx.name)?.[0]
-        const q   = sym ? bySymbol.get(sym) : undefined
-        return q
-          ? { ...idx, value: q.regularMarketPrice, change: q.regularMarketChangePercent, changeAbs: q.regularMarketChange }
-          : idx
-      })
-
-      const axjoQ = bySymbol.get('^AXJO')
-      const asx   = axjoQ
-        ? { price: axjoQ.regularMarketPrice, change: axjoQ.regularMarketChangePercent, changeAbs: axjoQ.regularMarketChange }
-        : base.asx
-
-      return {
-        ...base,
-        topMovers,
-        indices,
-        asx,
-        meta: base.meta ? {
-          ...base.meta,
-          hasLiveStocks:  topMovers.some((m) => m.price !== null),
-          hasLiveIndices: indices.some((i) => i.value !== null),
-          hasAnyLive:     true,
-          dataSource:     'yahoo-client',
-        } : base.meta,
-      }
-    } catch {
-      return base  // Yahoo Finance call failed (e.g. CORS) — just use server data
     }
   }
 
@@ -236,15 +225,23 @@ export default function MarketsPage() {
   const asx       = data.asx
   const asxChange = asx?.change ?? 0
 
-  // Data freshness label
   function freshnessLabel(): string {
     if (!hasAnyLive) return 'Data unavailable'
     const parts: string[] = []
-    if (stocksLive)  parts.push('stocks 15-min delay')
+    if (stocksLive)  parts.push('stocks ~15 min delay')
     if (commodLive)  parts.push('commodities real-time')
     if (fxLive)      parts.push('FX real-time')
-    if (indicesLive) parts.push('indices 15-min delay')
+    if (indicesLive) parts.push('indices ~15 min delay')
     return parts.length ? parts.join(' · ') : 'partial data'
+  }
+
+  function sourceLabel(): string {
+    const src = meta?.dataSource
+    if (src === 'yahoo')  return 'Yahoo Finance'
+    if (src === 'stooq')  return 'Stooq'
+    if (src === 'fmp')    return 'FMP'
+    if (src === 'asx')    return 'ASX'
+    return 'Twelve Data'
   }
 
   return (
@@ -267,7 +264,6 @@ export default function MarketsPage() {
                     {asx ? fmt(asx.price, 1) : loading ? '···' : '—'}
                   </span>
                   <ChangeChip change={asx?.change ?? null} />
-                  {/* Only show LIVE badge when we genuinely have live index data */}
                   {indicesLive && (
                     <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
                       style={{
@@ -312,7 +308,7 @@ export default function MarketsPage() {
         <div>
           <SectionHeader
             title="Global Indices"
-            note={indicesLive ? '~15 min delay' : 'unavailable'}
+            note={indicesLive ? '~15 min delay' : loading ? 'loading…' : 'unavailable'}
           />
           <div className="grid grid-cols-2 gap-2">
             {data.indices.map((idx) => (
@@ -322,7 +318,7 @@ export default function MarketsPage() {
                   {idx.name}
                 </div>
                 <div className="font-mono font-semibold text-[15px]">
-                  {fmt(idx.value, idx.name === 'Nikkei' ? 0 : 2)}
+                  {idx.value !== null ? fmt(idx.value, idx.name === 'Nikkei' ? 0 : 2) : loading ? '···' : '—'}
                 </div>
                 <div className="mt-1">
                   <ChangeChip change={idx.change} />
@@ -360,7 +356,7 @@ export default function MarketsPage() {
         <div>
           <SectionHeader
             title="Commodities"
-            note={commodLive ? 'real-time' : 'unavailable'}
+            note={commodLive ? 'real-time' : loading ? 'loading…' : 'unavailable'}
           />
           <div className="space-y-1.5">
             {data.commodities.map((c) => (
@@ -369,7 +365,7 @@ export default function MarketsPage() {
                 <span className="text-[13px] font-medium">{c.name}</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[12px]">
-                    {c.value !== null ? `$${fmt(c.value)}` : '—'}
+                    {c.value !== null ? `$${fmt(c.value)}` : loading ? '···' : '—'}
                     {c.value !== null && (
                       <span className="text-[10px] ml-0.5" style={{ color: 'var(--text-muted)' }}>{c.unit}</span>
                     )}
@@ -392,7 +388,7 @@ export default function MarketsPage() {
                   : 'real-time'
                 : meta?.fxDate
                   ? `ECB rate · ${meta.fxDate}`
-                  : 'unavailable'
+                  : loading ? 'loading…' : 'unavailable'
             }
           />
           <div className="grid grid-cols-2 gap-2">
@@ -408,7 +404,7 @@ export default function MarketsPage() {
                   )}
                 </div>
                 <div className="font-mono font-semibold text-[15px] mb-1">
-                  {fx.value !== null ? fmt(fx.value, fx.pair.includes('JPY') ? 3 : 4) : '—'}
+                  {fx.value !== null ? fmt(fx.value, fx.pair.includes('JPY') ? 3 : 4) : loading ? '···' : '—'}
                 </div>
                 <ChangeChip change={fx.change} />
               </div>
@@ -420,7 +416,7 @@ export default function MarketsPage() {
         <div>
           <SectionHeader
             title="ASX Top Stocks"
-            note={stocksLive ? '~15 min delay' : 'unavailable'}
+            note={stocksLive ? '~15 min delay' : loading ? 'loading…' : 'unavailable'}
           />
           <div className="space-y-1.5">
             {data.topMovers.map((m) => (
@@ -438,7 +434,7 @@ export default function MarketsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[12px]">
-                    {m.price !== null ? `$${fmt(m.price)}` : '—'}
+                    {m.price !== null ? `$${fmt(m.price)}` : loading ? '···' : '—'}
                   </span>
                   <ChangeChip change={m.change} />
                 </div>
@@ -451,7 +447,7 @@ export default function MarketsPage() {
         <div className="text-center pb-2 space-y-1">
           <div className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
             {hasAnyLive
-              ? `${meta?.dataSource === 'yahoo-client' ? 'Yahoo Finance' : meta?.dataSource === 'asx' ? 'ASX' : 'FMP · Twelve Data'} · ${freshnessLabel()}`
+              ? `${sourceLabel()} · Twelve Data · ${freshnessLabel()}`
               : 'Market data unavailable · Check connection'}
             {' · Not financial advice'}
           </div>

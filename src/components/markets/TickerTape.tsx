@@ -8,18 +8,16 @@ interface TickerItem {
   change: number | null
 }
 
-// Shown while loading or if API fails — no fake prices, just labels
 const LOADING_ITEMS: TickerItem[] = [
-  { label: 'ASX 200',      value: '···', change: null },
-  { label: 'S&P 500',      value: '···', change: null },
-  { label: 'AUD/USD',      value: '···', change: null },
-  { label: 'Gold',         value: '···', change: null },
-  { label: 'CBA',          value: '···', change: null },
-  { label: 'BHP',          value: '···', change: null },
-  { label: 'RIO',          value: '···', change: null },
-  { label: 'WDS',          value: '···', change: null },
-  { label: 'AUD/JPY',      value: '···', change: null },
-  { label: 'RBA Rate',     value: '4.10%', change: null },
+  { label: 'ASX 200',  value: '···', change: null },
+  { label: 'S&P 500',  value: '···', change: null },
+  { label: 'AUD/USD',  value: '···', change: null },
+  { label: 'Gold',     value: '···', change: null },
+  { label: 'CBA',      value: '···', change: null },
+  { label: 'BHP',      value: '···', change: null },
+  { label: 'RIO',      value: '···', change: null },
+  { label: 'AUD/JPY',  value: '···', change: null },
+  { label: 'RBA Rate', value: '4.10%', change: null },
 ]
 
 function fmt(n: number | null, decimals = 2): string {
@@ -30,23 +28,34 @@ function fmt(n: number | null, decimals = 2): string {
   })
 }
 
+// ── API response shapes ───────────────────────────────────────────────────────
+
 interface SummaryResponse {
-  asx?:        { price: number; change: number } | null
-  indices?:    { name: string; value: number | null; change: number | null }[]
-  fx?:         { pair: string; value: number | null; change: number | null }[]
-  commodities?:{ name: string; value: number | null; change: number | null }[]
-  topMovers?:  { ticker: string; price: number | null; change: number | null }[]
+  asx?:         { price: number; change: number } | null
+  indices?:     { name: string; value: number | null; change: number | null }[]
+  fx?:          { pair: string; value: number | null; change: number | null }[]
+  commodities?: { name: string; value: number | null; change: number | null }[]
+  topMovers?:   { ticker: string; price: number | null; change: number | null }[]
 }
+
+interface StocksResponse {
+  topMovers?: { ticker: string; price: number | null; change: number | null }[]
+  indices?:   { name: string; value: number | null; change: number | null }[]
+  asx?:       { price: number; change: number } | null
+  source:     string
+}
+
+// ── Build tape items from combined data ───────────────────────────────────────
 
 function buildItems(d: SummaryResponse): TickerItem[] {
   const items: TickerItem[] = []
 
-  // ASX 200 hero
+  // ASX 200 hero price
   if (d.asx?.price) {
     items.push({ label: 'ASX 200', value: fmt(d.asx.price, 1), change: d.asx.change ?? null })
   }
 
-  // Other global indices (skip ASX 200 since already added)
+  // Other global indices (skip ASX 200 — already added above)
   for (const idx of d.indices ?? []) {
     if (idx.name === 'ASX 200') continue
     if (idx.value !== null) {
@@ -63,25 +72,27 @@ function buildItems(d: SummaryResponse): TickerItem[] {
     }
   }
 
-  // Commodities
+  // Commodities (Gold, etc.)
   for (const c of d.commodities ?? []) {
     if (c.value !== null) {
       items.push({ label: c.name, value: `$${fmt(c.value, 0)}`, change: c.change })
     }
   }
 
-  // Top movers (first 4 by absolute change)
-  for (const m of (d.topMovers ?? []).slice(0, 4)) {
+  // Top ASX stocks (up to 5 by absolute change)
+  for (const m of (d.topMovers ?? []).slice(0, 5)) {
     if (m.price !== null) {
       items.push({ label: m.ticker, value: `$${fmt(m.price)}`, change: m.change })
     }
   }
 
-  // Always include RBA cash rate (static — updated manually when RBA changes)
+  // RBA cash rate (always shown — static until RBA changes it)
   items.push({ label: 'RBA Rate', value: '4.10%', change: null })
 
   return items.length >= 3 ? items : LOADING_ITEMS
 }
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function TickerTape() {
   const [items, setItems] = useState<TickerItem[]>(LOADING_ITEMS)
@@ -89,13 +100,35 @@ export function TickerTape() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/market/summary')
-        if (!res.ok) return
-        const data: SummaryResponse = await res.json()
-        const built = buildItems(data)
+        // Fetch FX/metals and stocks in parallel
+        const [summaryRes, stocksRes] = await Promise.all([
+          fetch('/api/market/summary'),
+          fetch('/api/market/stocks'),
+        ])
+
+        let combined: SummaryResponse = {}
+
+        if (summaryRes.ok) {
+          combined = await summaryRes.json() as SummaryResponse
+        }
+
+        if (stocksRes.ok) {
+          const stocks: StocksResponse = await stocksRes.json()
+          if (stocks?.source !== 'none') {
+            // Merge stocks/indices into combined data
+            if (stocks.topMovers?.length) combined.topMovers = stocks.topMovers
+            if (stocks.indices?.length)   combined.indices   = stocks.indices
+            if (stocks.asx)               combined.asx       = stocks.asx
+          }
+        }
+
+        const built = buildItems(combined)
         setItems(built)
-      } catch { /* keep loading state */ }
+      } catch {
+        // keep loading state
+      }
     }
+
     load()
     const id = setInterval(load, 5 * 60 * 1000)  // refresh every 5 min
     return () => clearInterval(id)
