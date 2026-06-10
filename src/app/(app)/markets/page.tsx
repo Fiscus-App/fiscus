@@ -123,6 +123,100 @@ function SectionHeader({ title, note }: { title: string; note?: string }) {
   )
 }
 
+// ── Browser-side Yahoo Finance (user's IP — never blocked by Yahoo Finance) ───
+// Called AFTER the Edge route attempt. Logs errors to console for diagnosis.
+
+const YF_STOCK_SYMS  = ['CBA.AX', 'BHP.AX', 'WDS.AX', 'RIO.AX', 'FMG.AX', 'CSL.AX', 'NAB.AX', 'ANZ.AX']
+const YF_INDEX_SYMS  = ['^AXJO', '^GSPC', '^N225', '^FTSE']
+const YF_ALL_SYMS    = [...YF_STOCK_SYMS, ...YF_INDEX_SYMS]
+
+const YF_STOCK_NAMES: Record<string, string> = {
+  'CBA.AX': 'Commonwealth Bank', 'BHP.AX': 'BHP Group',
+  'WDS.AX': 'Woodside Energy',   'RIO.AX': 'Rio Tinto',
+  'FMG.AX': 'Fortescue',         'CSL.AX': 'CSL Limited',
+  'NAB.AX': 'Natl Australia Bank','ANZ.AX': 'ANZ Group',
+}
+const YF_INDEX_NAMES: Record<string, string> = {
+  '^AXJO': 'ASX 200', '^GSPC': 'S&P 500', '^N225': 'Nikkei', '^FTSE': 'FTSE 100',
+}
+
+interface YFQuote {
+  symbol: string
+  regularMarketPrice: number
+  regularMarketChange: number
+  regularMarketChangePercent: number
+}
+
+function buildStocksFromYF(results: YFQuote[]): StocksResponse {
+  const bySymbol = new Map(results.map((r) => [r.symbol, r]))
+
+  const topMovers = YF_STOCK_SYMS.map((sym) => {
+    const q = bySymbol.get(sym)
+    return {
+      ticker:    sym.replace('.AX', ''),
+      name:      YF_STOCK_NAMES[sym],
+      price:     q?.regularMarketPrice         ?? null,
+      change:    q?.regularMarketChangePercent ?? null,
+      changeAbs: q?.regularMarketChange        ?? null,
+    }
+  }).sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
+
+  const indices = YF_INDEX_SYMS.map((sym) => {
+    const q = bySymbol.get(sym)
+    return {
+      name:      YF_INDEX_NAMES[sym],
+      value:     q?.regularMarketPrice         ?? null,
+      change:    q?.regularMarketChangePercent ?? null,
+      changeAbs: q?.regularMarketChange        ?? null,
+    }
+  })
+
+  const axjoQ = bySymbol.get('^AXJO')
+  const asx: AsxData | null = axjoQ
+    ? { price: axjoQ.regularMarketPrice, change: axjoQ.regularMarketChangePercent, changeAbs: axjoQ.regularMarketChange }
+    : null
+
+  return { topMovers, indices, asx, source: 'yahoo-browser', fetchedAt: new Date().toISOString() }
+}
+
+async function fetchStocksFromBrowser(): Promise<StocksResponse | null> {
+  const symbolStr = YF_ALL_SYMS.join(',')
+
+  // Try query1 first, then query2 (different CDN region)
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    try {
+      const url = `https://${host}/v7/finance/quote?symbols=${symbolStr}&lang=en-US&region=AU`
+      const res = await fetch(url, {
+        headers: {
+          'Accept':          'application/json, text/plain, */*',
+          'Accept-Language': 'en-AU,en-US;q=0.9',
+        },
+      })
+
+      if (!res.ok) {
+        console.error(`[Fiscus/stocks] Yahoo (${host}) HTTP ${res.status}`)
+        continue
+      }
+
+      const data = await res.json() as { quoteResponse?: { result?: YFQuote[] } }
+      const results = data?.quoteResponse?.result ?? []
+
+      if (results.length === 0) {
+        console.error(`[Fiscus/stocks] Yahoo (${host}) returned 0 results`, data)
+        continue
+      }
+
+      console.info(`[Fiscus/stocks] Yahoo (${host}) ✓ got ${results.length} quotes`)
+      return buildStocksFromYF(results)
+    } catch (e) {
+      // TypeError: Failed to fetch = CORS block or network error
+      console.error(`[Fiscus/stocks] Yahoo (${host}) fetch error:`, e)
+    }
+  }
+
+  return null
+}
+
 // ── Merge stocks/indices from the Edge route into the summary ─────────────────
 
 function mergeStocks(base: MarketSummary, stocks: StocksResponse): MarketSummary {
@@ -203,6 +297,17 @@ export default function MarketsPage() {
         const stocksData: StocksResponse = await stocksRes.json()
         if (stocksData?.source !== 'none') {
           combined = mergeStocks(combined, stocksData)
+        }
+      }
+
+      // If Edge route had no stocks, fall back to browser-side Yahoo Finance.
+      // The user's browser IP is never blocked — this is the reliable path.
+      const missingStocks  = !combined.topMovers.some((m) => m.price  !== null)
+      const missingIndices = !combined.indices.some((i)  => i.value !== null)
+      if (missingStocks || missingIndices) {
+        const browserData = await fetchStocksFromBrowser()
+        if (browserData) {
+          combined = mergeStocks(combined, browserData)
         }
       }
 

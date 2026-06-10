@@ -28,6 +28,65 @@ function fmt(n: number | null, decimals = 2): string {
   })
 }
 
+// ── Browser-side Yahoo Finance fallback ──────────────────────────────────────
+// Used when the Edge route (/api/market/stocks) returns source: 'none'.
+
+const YF_STOCKS  = ['CBA.AX', 'BHP.AX', 'WDS.AX', 'RIO.AX', 'FMG.AX', 'CSL.AX', 'NAB.AX', 'ANZ.AX']
+const YF_INDICES = ['^AXJO', '^GSPC', '^N225', '^FTSE']
+
+interface YFQuote {
+  symbol: string
+  regularMarketPrice: number
+  regularMarketChangePercent: number
+}
+
+async function fetchYahooFromBrowser(): Promise<{
+  topMovers: { ticker: string; price: number; change: number }[]
+  indices:   { name: string; value: number; change: number }[]
+  asx?:      { price: number; change: number }
+} | null> {
+  const syms = [...YF_STOCKS, ...YF_INDICES].join(',')
+  const INDEX_NAMES: Record<string, string> = {
+    '^AXJO': 'ASX 200', '^GSPC': 'S&P 500', '^N225': 'Nikkei', '^FTSE': 'FTSE 100',
+  }
+
+  for (const host of ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+    try {
+      const url = `https://${host}/v7/finance/quote?symbols=${syms}&lang=en-US&region=AU`
+      const res = await fetch(url, { headers: { 'Accept': 'application/json, */*' } })
+      if (!res.ok) continue
+
+      const data = await res.json() as { quoteResponse?: { result?: YFQuote[] } }
+      const results = data?.quoteResponse?.result ?? []
+      if (results.length === 0) continue
+
+      const bySymbol = new Map(results.map((r) => [r.symbol, r]))
+
+      const topMovers = YF_STOCKS
+        .map((sym) => {
+          const q = bySymbol.get(sym)
+          return q ? { ticker: sym.replace('.AX', ''), price: q.regularMarketPrice, change: q.regularMarketChangePercent } : null
+        })
+        .filter((x): x is { ticker: string; price: number; change: number } => x !== null)
+
+      const indices = YF_INDICES
+        .map((sym) => {
+          const q = bySymbol.get(sym)
+          return q ? { name: INDEX_NAMES[sym], value: q.regularMarketPrice, change: q.regularMarketChangePercent } : null
+        })
+        .filter((x): x is { name: string; value: number; change: number } => x !== null)
+
+      const axjoQ = bySymbol.get('^AXJO')
+      return {
+        topMovers,
+        indices,
+        asx: axjoQ ? { price: axjoQ.regularMarketPrice, change: axjoQ.regularMarketChangePercent } : undefined,
+      }
+    } catch { /* try next host */ }
+  }
+  return null
+}
+
 // ── API response shapes ───────────────────────────────────────────────────────
 
 interface SummaryResponse {
@@ -115,10 +174,21 @@ export function TickerTape() {
         if (stocksRes.ok) {
           const stocks: StocksResponse = await stocksRes.json()
           if (stocks?.source !== 'none') {
-            // Merge stocks/indices into combined data
             if (stocks.topMovers?.length) combined.topMovers = stocks.topMovers
             if (stocks.indices?.length)   combined.indices   = stocks.indices
             if (stocks.asx)               combined.asx       = stocks.asx
+          }
+        }
+
+        // Browser-side fallback: user's IP not blocked by Yahoo Finance
+        const missingStocks  = !(combined.topMovers ?? []).some((m) => m.price  !== null)
+        const missingIndices = !(combined.indices  ?? []).some((i) => i.value !== null)
+        if (missingStocks || missingIndices) {
+          const yf = await fetchYahooFromBrowser()
+          if (yf) {
+            if (yf.topMovers.length) combined.topMovers = yf.topMovers
+            if (yf.indices.length)   combined.indices   = yf.indices
+            if (yf.asx)              combined.asx       = yf.asx
           }
         }
 
