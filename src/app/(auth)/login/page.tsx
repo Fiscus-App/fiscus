@@ -167,6 +167,13 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Forgot password */}
+            <div className="text-right -mt-1">
+              <Link href="/forgot-password" className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                Forgot password?
+              </Link>
+            </div>
+
             {/* Submit */}
             <button
               type="submit"
