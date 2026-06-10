@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
 import { dbArticleToFeedItem } from '@/lib/feed/transform'
-import { fetchQuotes } from '@/lib/market/yahoo'
+import { fetchQuotesByTicker } from '@/lib/market/twelvedata'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 
     // Batch-fetch real prices for all tickers mentioned in these articles
     const allTickers = Array.from(new Set(articles.flatMap((a) => a.relatedTickers)))
-    const quotes = await fetchQuotes(allTickers)
+    const quotes = await fetchQuotesByTicker(allTickers)
 
     const feedItems = articles.map((a) => {
       const item   = dbArticleToFeedItem(a)
