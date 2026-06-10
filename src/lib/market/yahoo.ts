@@ -82,12 +82,12 @@ export async function fetchQuotes(tickers: string[]): Promise<Map<string, Quote>
 
   if (symbolToTicker.size === 0) return new Map()
 
-  const symbolsKey = [...symbolToTicker.keys()].sort().join(',')
+  const symbolsKey = Array.from(symbolToTicker.keys()).sort().join(',')
   const cached = getCached<Map<string, Quote>>(symbolsKey)
   if (cached) return cached
 
   try {
-    const symbols = [...symbolToTicker.keys()].join(',')
+    const symbols = Array.from(symbolToTicker.keys()).join(',')
     const fields  = 'regularMarketPrice,regularMarketChangePercent,regularMarketChange,regularMarketPreviousClose,regularMarketVolume,shortName,marketState'
     const url     = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=${fields}`
 
