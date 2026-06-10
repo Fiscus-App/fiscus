@@ -6,60 +6,71 @@ import { TrendingUp, TrendingDown, Minus, RefreshCw } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface IndexData   { name: string; symbol: string; value: number | null; change: number | null; changeAbs: number | null }
-interface CommodData  { name: string; unit: string; symbol: string; value: number | null; change: number | null }
-interface FxData      { pair: string; symbol: string; value: number | null; change: number | null }
-interface MoverData   { ticker: string; name: string; symbol: string; price: number | null; change: number | null }
-interface QuoteData   { price: number; change: number; changeAbs: number; marketState?: string }
+interface IndexData  { name: string; value: number | null; change: number | null; changeAbs: number | null }
+interface CommodData { name: string; unit: string; value: number | null; change: number | null }
+interface FxData     { pair: string; value: number | null; change: number | null; source?: string | null }
+interface MoverData  { ticker: string; name: string; price: number | null; change: number | null }
+interface AsxData    { price: number; change: number; changeAbs: number }
+
+interface MetaData {
+  fetchedAt:          string
+  hasAnyLive:         boolean
+  hasLiveStocks:      boolean
+  hasLiveFX:          boolean
+  hasLiveIndices:     boolean
+  hasLiveCommodities: boolean
+  fxDate:             string | null
+}
 
 interface MarketSummary {
-  indices:    IndexData[]
+  indices:     IndexData[]
   commodities: CommodData[]
-  fx:         FxData[]
-  topMovers:  MoverData[]
-  asx:        QuoteData | null
+  fx:          FxData[]
+  topMovers:   MoverData[]
+  asx:         AsxData | null
+  meta?:       MetaData
 }
 
-// ── Fallback data (shown until live data loads) ───────────────────────────────
+// ── Fallback structure (values shown only before first successful API call) ───
+// These are NOT claimed to be real — the page marks them as indicative.
 const FALLBACK: MarketSummary = {
   indices: [
-    { name: 'ASX 200',  symbol: '^AXJO', value: 8142.3, change: -0.43, changeAbs: -35.2 },
-    { name: 'S&P 500',  symbol: '^GSPC', value: 5648.2, change: 0.24,  changeAbs: 13.4  },
-    { name: 'Nikkei',   symbol: '^N225', value: 38421,  change: -1.12, changeAbs: -435  },
-    { name: 'FTSE 100', symbol: '^FTSE', value: 8201.4, change: 0.51,  changeAbs: 41.6  },
+    { name: 'ASX 200',  value: null, change: null, changeAbs: null },
+    { name: 'S&P 500',  value: null, change: null, changeAbs: null },
+    { name: 'Nikkei',   value: null, change: null, changeAbs: null },
+    { name: 'FTSE 100', value: null, change: null, changeAbs: null },
   ],
   commodities: [
-    { name: 'Gold',    unit: '/oz',   symbol: 'GC=F', value: 3298,  change: 0.42  },
-    { name: 'WTI Oil', unit: '/bbl',  symbol: 'CL=F', value: 68.30, change: -0.72 },
-    { name: 'Copper',  unit: '/lb',   symbol: 'HG=F', value: 4.21,  change: 1.14  },
-    { name: 'Silver',  unit: '/oz',   symbol: 'SI=F', value: 24.85, change: 0.31  },
+    { name: 'Gold',    unit: '/oz',  value: null, change: null },
+    { name: 'WTI Oil', unit: '/bbl', value: null, change: null },
+    { name: 'Silver',  unit: '/oz',  value: null, change: null },
   ],
   fx: [
-    { pair: 'AUD/USD', symbol: 'AUDUSD=X', value: 0.6412, change: -0.23 },
-    { pair: 'AUD/CNY', symbol: 'AUDCNY=X', value: 4.6523, change: -0.18 },
-    { pair: 'AUD/JPY', symbol: 'AUDJPY=X', value: 96.84,  change: -1.02 },
-    { pair: 'AUD/EUR', symbol: 'AUDEUR=X', value: 0.5921, change: 0.11  },
+    { pair: 'AUD/USD', value: null, change: null },
+    { pair: 'AUD/CNY', value: null, change: null },
+    { pair: 'AUD/JPY', value: null, change: null },
+    { pair: 'AUD/EUR', value: null, change: null },
   ],
   topMovers: [
-    { ticker: 'WDS', name: 'Woodside Energy',    symbol: 'WDS.AX', price: 24.12,  change: 2.81  },
-    { ticker: 'CBA', name: 'Commonwealth Bank',  symbol: 'CBA.AX', price: 162.40, change: 1.82  },
-    { ticker: 'RIO', name: 'Rio Tinto',          symbol: 'RIO.AX', price: 118.40, change: 1.95  },
-    { ticker: 'BHP', name: 'BHP Group',          symbol: 'BHP.AX', price: 44.82,  change: -2.30 },
-    { ticker: 'FMG', name: 'Fortescue',          symbol: 'FMG.AX', price: 18.92,  change: -1.74 },
+    { ticker: 'CBA', name: 'Commonwealth Bank',   price: null, change: null },
+    { ticker: 'BHP', name: 'BHP Group',           price: null, change: null },
+    { ticker: 'WDS', name: 'Woodside Energy',     price: null, change: null },
+    { ticker: 'RIO', name: 'Rio Tinto',           price: null, change: null },
+    { ticker: 'FMG', name: 'Fortescue',           price: null, change: null },
   ],
-  asx: { price: 8142.3, change: -0.43, changeAbs: -35.2 },
+  asx: null,
 }
 
-// ── Sector colours (static — ASX sector ETFs are hard to get for free) ────────
+// ── Sector colours (ASX sector ETFs are not freely available — static) ────────
 const SECTORS = [
-  { name: 'Energy',    change: 1.82  },
-  { name: 'Materials', change: -1.21 },
-  { name: 'Financials',change: 0.94  },
-  { name: 'Health',    change: -0.38 },
-  { name: 'Tech',      change: 2.14  },
-  { name: 'REITs',     change: -0.67 },
-  { name: 'Utilities', change: 0.22  },
-  { name: 'Consumer',  change: -0.85 },
+  { name: 'Energy',    change: 0 },
+  { name: 'Materials', change: 0 },
+  { name: 'Financials',change: 0 },
+  { name: 'Health',    change: 0 },
+  { name: 'Tech',      change: 0 },
+  { name: 'REITs',     change: 0 },
+  { name: 'Utilities', change: 0 },
+  { name: 'Consumer',  change: 0 },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -70,7 +81,8 @@ function fmt(n: number | null, decimals = 2): string {
 }
 
 function ChangeChip({ change }: { change: number | null }) {
-  if (change === null) return <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>—</span>
+  if (change === null)
+    return <span className="text-[11px] font-mono" style={{ color: 'var(--text-muted)' }}>—</span>
   const positive = change > 0
   const neutral  = change === 0
   const color = neutral ? 'var(--text-muted)' : positive ? 'var(--green)' : 'var(--red)'
@@ -85,12 +97,18 @@ function ChangeChip({ change }: { change: number | null }) {
   )
 }
 
-function SectionHeader({ title }: { title: string }) {
+function SectionHeader({ title, note }: { title: string; note?: string }) {
   return (
     <div className="flex items-center gap-2 mb-3">
       <span className="text-[10px] font-bold uppercase tracking-widest font-mono" style={{ color: 'var(--text-muted)' }}>
         {title}
       </span>
+      {note && (
+        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+          style={{ color: 'var(--text-faint)', background: 'var(--bg-3)' }}>
+          {note}
+        </span>
+      )}
       <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
     </div>
   )
@@ -100,37 +118,58 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function MarketsPage() {
   const [data,    setData]    = useState<MarketSummary>(FALLBACK)
-  const [isLive,  setIsLive]  = useState(false)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+
+  // Derived from the API meta — which categories have real data
+  const meta        = data.meta
+  const hasAnyLive  = meta?.hasAnyLive         ?? false
+  const stocksLive  = meta?.hasLiveStocks      ?? false
+  const fxLive      = meta?.hasLiveFX          ?? false
+  const indicesLive = meta?.hasLiveIndices      ?? false
+  const commodLive  = meta?.hasLiveCommodities  ?? false
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
     try {
       const res = await fetch('/api/market/summary')
       if (res.ok) {
-        const json = await res.json()
-        // Only replace if we got real index data back
-        if (json?.indices?.[0]?.value !== null) {
+        const json: MarketSummary = await res.json()
+        // Switch to API data whenever we get a valid response.
+        // Even if some fields are null, showing null (—) is more accurate
+        // than showing hardcoded indicative values.
+        if (json?.indices && json?.topMovers) {
           setData(json)
-          setIsLive(true)
           setLastUpdated(new Date())
         }
       }
-    } catch { /* keep fallback */ } finally {
+    } catch {
+      // keep whatever we already have
+    } finally {
       if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     load()
-    const id = setInterval(() => load(true), 60_000) // refresh every 60s
+    const id = setInterval(() => load(true), 60_000)
     return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const asx        = data.asx
-  const asxChange  = asx?.change ?? -0.43
-  const asxChartData = [{ v: 0 }] // real chart data added in task 4.1.4
+  const asx       = data.asx
+  const asxChange = asx?.change ?? 0
+
+  // Data freshness label
+  function freshnessLabel(): string {
+    if (!hasAnyLive) return 'Data unavailable'
+    const parts: string[] = []
+    if (stocksLive)  parts.push('stocks 15-min delay')
+    if (commodLive)  parts.push('commodities real-time')
+    if (fxLive)      parts.push('FX real-time')
+    if (indicesLive) parts.push('indices 15-min delay')
+    return parts.length ? parts.join(' · ') : 'partial data'
+  }
 
   return (
     <div className="h-full overflow-y-auto scroll-y" style={{ background: 'var(--bg)' }}>
@@ -149,17 +188,20 @@ export default function MarketsPage() {
                 </div>
                 <div className="flex items-baseline gap-3 mt-1">
                   <span className="font-mono font-semibold" style={{ fontSize: 28, letterSpacing: '-0.02em' }}>
-                    {asx ? fmt(asx.price, 1) : '—'}
+                    {asx ? fmt(asx.price, 1) : loading ? '···' : '—'}
                   </span>
                   <ChangeChip change={asx?.change ?? null} />
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
-                    style={{
-                      background: isLive ? 'rgba(46,212,148,0.12)' : 'rgba(255,255,255,0.06)',
-                      color: isLive ? 'var(--green)' : 'var(--text-faint)',
-                      border: `1px solid ${isLive ? 'rgba(46,212,148,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                    }}>
-                    {isLive ? '● LIVE' : 'DELAYED'}
-                  </span>
+                  {/* Only show LIVE badge when we genuinely have live index data */}
+                  {indicesLive && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                      style={{
+                        background: 'rgba(46,212,148,0.12)',
+                        color:      'var(--green)',
+                        border:     '1px solid rgba(46,212,148,0.3)',
+                      }}>
+                      ● LIVE
+                    </span>
+                  )}
                 </div>
                 <div className="font-mono text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   {asx ? `${(asx.changeAbs ?? 0) >= 0 ? '▲' : '▼'} ${Math.abs(asx.changeAbs ?? 0).toFixed(1)} pts` : ''}
@@ -174,7 +216,7 @@ export default function MarketsPage() {
             </div>
             <div style={{ height: 72, marginTop: 12 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={asxChartData} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                <AreaChart data={[{ v: 0 }]} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="asx-grad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%"   stopColor={asxChange >= 0 ? '#2ed494' : '#ff5252'} stopOpacity={0.22} />
@@ -192,7 +234,10 @@ export default function MarketsPage() {
 
         {/* ── Global Indices ────────────────────────────────────── */}
         <div>
-          <SectionHeader title="Global Indices" />
+          <SectionHeader
+            title="Global Indices"
+            note={indicesLive ? '~15 min delay' : 'unavailable'}
+          />
           <div className="grid grid-cols-2 gap-2">
             {data.indices.map((idx) => (
               <div key={idx.name} className="rounded-xl p-3"
@@ -201,7 +246,7 @@ export default function MarketsPage() {
                   {idx.name}
                 </div>
                 <div className="font-mono font-semibold text-[15px]">
-                  {fmt(idx.value, idx.symbol.includes('^N225') ? 0 : 2)}
+                  {fmt(idx.value, idx.name === 'Nikkei' ? 0 : 2)}
                 </div>
                 <div className="mt-1">
                   <ChangeChip change={idx.change} />
@@ -213,7 +258,7 @@ export default function MarketsPage() {
 
         {/* ── Sector Performance ────────────────────────────────── */}
         <div>
-          <SectionHeader title="Sector Performance" />
+          <SectionHeader title="Sector Performance" note="indicative" />
           <div className="rounded-xl p-3"
             style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', height: 120 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -237,7 +282,10 @@ export default function MarketsPage() {
 
         {/* ── Commodities ───────────────────────────────────────── */}
         <div>
-          <SectionHeader title="Commodities" />
+          <SectionHeader
+            title="Commodities"
+            note={commodLive ? 'real-time' : 'unavailable'}
+          />
           <div className="space-y-1.5">
             {data.commodities.map((c) => (
               <div key={c.name} className="rounded-xl px-3 py-2.5 flex items-center justify-between"
@@ -246,7 +294,9 @@ export default function MarketsPage() {
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[12px]">
                     {c.value !== null ? `$${fmt(c.value)}` : '—'}
-                    <span className="text-[10px] ml-0.5" style={{ color: 'var(--text-muted)' }}>{c.unit}</span>
+                    {c.value !== null && (
+                      <span className="text-[10px] ml-0.5" style={{ color: 'var(--text-muted)' }}>{c.unit}</span>
+                    )}
                   </span>
                   <ChangeChip change={c.change} />
                 </div>
@@ -257,16 +307,32 @@ export default function MarketsPage() {
 
         {/* ── FX ───────────────────────────────────────────────── */}
         <div>
-          <SectionHeader title="Foreign Exchange" />
+          <SectionHeader
+            title="Foreign Exchange"
+            note={
+              fxLive
+                ? data.fx.some((f) => f.source === 'ecb')
+                  ? 'real-time · ECB rates where noted'
+                  : 'real-time'
+                : meta?.fxDate
+                  ? `ECB rate · ${meta.fxDate}`
+                  : 'unavailable'
+            }
+          />
           <div className="grid grid-cols-2 gap-2">
             {data.fx.map((fx) => (
               <div key={fx.pair} className="rounded-xl p-3"
                 style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
-                <div className="text-[10px] font-mono tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>
-                  {fx.pair}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-mono tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                    {fx.pair}
+                  </span>
+                  {fx.source === 'ecb' && (
+                    <span className="text-[8px] font-mono" style={{ color: 'var(--text-faint)' }}>ECB</span>
+                  )}
                 </div>
                 <div className="font-mono font-semibold text-[15px] mb-1">
-                  {fx.value !== null ? fmt(fx.value, 4) : '—'}
+                  {fx.value !== null ? fmt(fx.value, fx.pair.includes('JPY') ? 3 : 4) : '—'}
                 </div>
                 <ChangeChip change={fx.change} />
               </div>
@@ -276,7 +342,10 @@ export default function MarketsPage() {
 
         {/* ── Top Movers ────────────────────────────────────────── */}
         <div>
-          <SectionHeader title="Top Movers" />
+          <SectionHeader
+            title="ASX Top Stocks"
+            note={stocksLive ? '~15 min delay' : 'unavailable'}
+          />
           <div className="space-y-1.5">
             {data.topMovers.map((m) => (
               <div key={m.ticker} className="rounded-xl px-3 py-2.5 flex items-center justify-between"
@@ -302,17 +371,19 @@ export default function MarketsPage() {
           </div>
         </div>
 
-        {/* ── Footer note ───────────────────────────────────────── */}
-        <div className="text-center pb-2">
-          <span className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
-            {isLive ? 'Prices via Yahoo Finance · 5-min delay' : 'Indicative prices · Not real-time'} · Not financial advice
-          </span>
+        {/* ── Footer ────────────────────────────────────────────── */}
+        <div className="text-center pb-2 space-y-1">
+          <div className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
+            {hasAnyLive
+              ? `Twelve Data · ${freshnessLabel()}`
+              : 'Market data unavailable · Check connection'}
+            {' · Not financial advice'}
+          </div>
           {lastUpdated && (
-            <div className="flex items-center justify-center gap-1 mt-1"
-              style={{ color: 'var(--text-faint)' }}>
+            <div className="flex items-center justify-center gap-1" style={{ color: 'var(--text-faint)' }}>
               <RefreshCw size={9} />
               <span className="text-[9px] font-mono">
-                Updated {lastUpdated.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                Fetched {lastUpdated.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
             </div>
           )}
