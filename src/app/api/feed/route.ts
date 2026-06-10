@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     ])
 
     // Batch-fetch real prices for all tickers mentioned in these articles
-    const allTickers = [...new Set(articles.flatMap((a) => a.relatedTickers))]
+    const allTickers = Array.from(new Set(articles.flatMap((a) => a.relatedTickers)))
     const quotes = await fetchQuotes(allTickers)
 
     const feedItems = articles.map((a) => {
