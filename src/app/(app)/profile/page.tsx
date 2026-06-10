@@ -1,13 +1,10 @@
 'use client'
 
 import { useSession, signOut } from 'next-auth/react'
-import { Bell, Shield, HelpCircle, LogOut, ChevronRight, Bookmark, Lightbulb, Eye, Settings } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bell, Shield, HelpCircle, LogOut, ChevronRight, Bookmark, Lightbulb, Eye, Settings, Pencil, Check, X } from 'lucide-react'
 
-const STATS = [
-  { label: 'Saved',      value: '—', icon: Bookmark   },
-  { label: 'Insightful', value: '—', icon: Lightbulb  },
-  { label: 'Watched',    value: '—', icon: Eye        },
-]
+interface Stats { saves: number; insightfuls: number; watches: number }
 
 const SETTINGS_ROWS = [
   { label: 'Notifications',      sub: 'Manage alerts & briefings',   icon: Bell       },
@@ -24,12 +21,47 @@ const TIER_LABELS: Record<string, string> = {
 }
 
 export default function ProfilePage() {
-  const { data: session } = useSession()
+  const { data: session, update: updateSession } = useSession()
+  const [stats, setStats]         = useState<Stats | null>(null)
+  const [editing, setEditing]     = useState(false)
+  const [nameInput, setNameInput] = useState('')
+  const [saving, setSaving]       = useState(false)
 
   const name    = session?.user?.name  ?? 'Guest'
   const email   = session?.user?.email ?? ''
   const tier    = (session?.user as any)?.tier ?? 'FREE'
   const initial = name.charAt(0).toUpperCase()
+
+  useEffect(() => {
+    fetch('/api/profile/stats')
+      .then((r) => r.json())
+      .then((d) => { if (!d.error) setStats(d) })
+      .catch(() => {})
+  }, [])
+
+  async function handleSaveName() {
+    if (!nameInput.trim()) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/profile/update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nameInput.trim() }),
+      })
+      if (res.ok) {
+        await updateSession({ name: nameInput.trim() })
+        setEditing(false)
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const STATS = [
+    { label: 'Saved',      value: stats?.saves      ?? '—', icon: Bookmark  },
+    { label: 'Insightful', value: stats?.insightfuls ?? '—', icon: Lightbulb },
+    { label: 'Watched',    value: stats?.watches     ?? '—', icon: Eye       },
+  ]
 
   return (
     <div className="h-full overflow-y-auto scroll-y" style={{ background: 'var(--bg)' }}>
@@ -48,14 +80,56 @@ export default function ProfilePage() {
           >
             {initial}
           </div>
+
           <div className="text-center">
-            <div className="font-serif text-[18px] font-medium">{name}</div>
+            {editing ? (
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveName()
+                    if (e.key === 'Escape') setEditing(false)
+                  }}
+                  className="font-serif text-[18px] font-medium text-center rounded-lg px-2 py-1 outline-none w-40"
+                  style={{ background: 'var(--bg-3)', border: '1px solid var(--gold-b)', color: 'var(--text-primary)' }}
+                />
+                <button
+                  onClick={handleSaveName}
+                  disabled={saving}
+                  className="w-7 h-7 rounded-full flex items-center justify-center"
+                  style={{ background: 'var(--gold)', color: '#07091a' }}
+                >
+                  <Check size={13} strokeWidth={3} />
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center"
+                  style={{ background: 'var(--bg-3)', color: 'var(--text-muted)' }}
+                >
+                  <X size={13} strokeWidth={2.5} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 justify-center">
+                <div className="font-serif text-[18px] font-medium">{name}</div>
+                <button
+                  onClick={() => { setNameInput(name); setEditing(true) }}
+                  className="w-6 h-6 rounded-full flex items-center justify-center"
+                  style={{ color: 'var(--text-muted)', background: 'var(--bg-3)' }}
+                >
+                  <Pencil size={11} strokeWidth={2} />
+                </button>
+              </div>
+            )}
             {email && (
               <div className="text-[12px] font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
                 {email}
               </div>
             )}
           </div>
+
           <div
             className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest"
             style={{ background: 'var(--gold)', color: '#07091a' }}
@@ -116,10 +190,7 @@ export default function ProfilePage() {
             </span>
             <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
           </div>
-          <div
-            className="rounded-2xl overflow-hidden"
-            style={{ border: '1px solid var(--line)' }}
-          >
+          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
             {SETTINGS_ROWS.map(({ label, sub, icon: Icon }, i) => (
               <button
                 key={label}
@@ -149,12 +220,8 @@ export default function ProfilePage() {
         {/* Sign out */}
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
-          className="w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-[13px] font-semibold transition-colors"
-          style={{
-            background: 'var(--bg-2)',
-            border: '1px solid var(--line)',
-            color: 'var(--red)',
-          }}
+          className="w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-[13px] font-semibold"
+          style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--red)' }}
         >
           <LogOut size={15} strokeWidth={2} />
           Sign Out
