@@ -15,10 +15,13 @@ model User {
   name          String?
   image         String?
   passwordHash  String?
-  role          UserRole @default(USER)
-  tier          UserTier @default(FREE)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  role                    UserRole  @default(USER)
+  tier                    UserTier  @default(FREE)
+  emailVerified           Boolean   @default(false)
+  verificationToken       String?   @unique
+  verificationTokenExpiry DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   interests      UserInterest[]
   watchHistory   WatchHistory[]

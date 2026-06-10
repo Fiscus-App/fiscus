@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { randomBytes } from 'crypto'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { sendVerificationEmail } from '@/lib/email'
 
 const schema = z.object({
   name:     z.string().min(2, 'Name must be at least 2 characters').max(50),
@@ -22,13 +24,23 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12)
+    const verificationToken = randomBytes(32).toString('hex')
+    const verificationTokenExpiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+
     const user = await db.user.create({
       data: {
         name,
         email: email.toLowerCase().trim(),
         passwordHash,
+        verificationToken,
+        verificationTokenExpiry,
       },
     })
+
+    // Send verification email (non-blocking — don't fail signup if email fails)
+    sendVerificationEmail(user.email, user.name ?? name, verificationToken).catch((e) =>
+      console.error('[signup] email send failed:', e)
+    )
 
     return NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 })
   } catch (e) {
