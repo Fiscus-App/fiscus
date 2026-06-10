@@ -28,7 +28,7 @@ interface MarketSummary {
   fx:          FxData[]
   topMovers:   MoverData[]
   asx:         AsxData | null
-  meta?:       MetaData
+  meta?:       MetaData & { dataSource?: string }
 }
 
 // ── Fallback structure (values shown only before first successful API call) ───
@@ -135,11 +135,17 @@ export default function MarketsPage() {
       const res = await fetch('/api/market/summary')
       if (res.ok) {
         const json: MarketSummary = await res.json()
-        // Switch to API data whenever we get a valid response.
-        // Even if some fields are null, showing null (—) is more accurate
-        // than showing hardcoded indicative values.
         if (json?.indices && json?.topMovers) {
-          setData(json)
+          // If server returned no stock data, try patching from browser-side Yahoo Finance
+          const needsStocks = !json.meta?.hasLiveStocks
+          const needsIndices = !json.meta?.hasLiveIndices
+
+          if (needsStocks || needsIndices) {
+            const patched = await patchFromYahoo(json)
+            setData(patched)
+          } else {
+            setData(json)
+          }
           setLastUpdated(new Date())
         }
       }
@@ -147,6 +153,76 @@ export default function MarketsPage() {
       // keep whatever we already have
     } finally {
       if (!silent) setLoading(false)
+    }
+  }
+
+  // Browser-side Yahoo Finance — bypasses server IP blocking.
+  // Only called when the server-side sources (FMP, ASX) have no stock data.
+  async function patchFromYahoo(base: MarketSummary): Promise<MarketSummary> {
+    try {
+      const yahooSymbols = [
+        'CBA.AX', 'BHP.AX', 'WDS.AX', 'RIO.AX', 'FMG.AX', 'CSL.AX', 'NAB.AX', 'ANZ.AX',
+        '^AXJO', '^GSPC', '^N225', '^FTSE',
+      ]
+      const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSymbols.join(',')}`
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+      if (!res.ok) return base
+
+      const json = await res.json()
+      const results: Array<{
+        symbol: string
+        regularMarketPrice: number
+        regularMarketChangePercent: number
+        regularMarketChange: number
+      }> = json?.quoteResponse?.result ?? []
+      if (results.length === 0) return base
+
+      const bySymbol = new Map(results.map((r) => [r.symbol, r]))
+
+      const TICKER_MAP: Record<string, string> = {
+        'CBA.AX': 'CBA', 'BHP.AX': 'BHP', 'WDS.AX': 'WDS', 'RIO.AX': 'RIO',
+        'FMG.AX': 'FMG', 'CSL.AX': 'CSL', 'NAB.AX': 'NAB', 'ANZ.AX': 'ANZ',
+      }
+      const INDEX_MAP: Record<string, string> = {
+        '^AXJO': 'ASX 200', '^GSPC': 'S&P 500', '^N225': 'Nikkei', '^FTSE': 'FTSE 100',
+      }
+
+      const topMovers = base.topMovers.map((m) => {
+        const sym = `${m.ticker}.AX`
+        const q   = bySymbol.get(sym)
+        return q
+          ? { ...m, price: q.regularMarketPrice, change: q.regularMarketChangePercent }
+          : m
+      }).sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
+
+      const indices = base.indices.map((idx) => {
+        const sym = Object.entries(INDEX_MAP).find(([, name]) => name === idx.name)?.[0]
+        const q   = sym ? bySymbol.get(sym) : undefined
+        return q
+          ? { ...idx, value: q.regularMarketPrice, change: q.regularMarketChangePercent, changeAbs: q.regularMarketChange }
+          : idx
+      })
+
+      const axjoQ = bySymbol.get('^AXJO')
+      const asx   = axjoQ
+        ? { price: axjoQ.regularMarketPrice, change: axjoQ.regularMarketChangePercent, changeAbs: axjoQ.regularMarketChange }
+        : base.asx
+
+      return {
+        ...base,
+        topMovers,
+        indices,
+        asx,
+        meta: base.meta ? {
+          ...base.meta,
+          hasLiveStocks:  topMovers.some((m) => m.price !== null),
+          hasLiveIndices: indices.some((i) => i.value !== null),
+          hasAnyLive:     true,
+          dataSource:     'yahoo-client',
+        } : base.meta,
+      }
+    } catch {
+      return base  // Yahoo Finance call failed (e.g. CORS) — just use server data
     }
   }
 
@@ -375,7 +451,7 @@ export default function MarketsPage() {
         <div className="text-center pb-2 space-y-1">
           <div className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>
             {hasAnyLive
-              ? `Twelve Data · ${freshnessLabel()}`
+              ? `${meta?.dataSource === 'yahoo-client' ? 'Yahoo Finance' : meta?.dataSource === 'asx' ? 'ASX' : 'FMP · Twelve Data'} · ${freshnessLabel()}`
               : 'Market data unavailable · Check connection'}
             {' · Not financial advice'}
           </div>
