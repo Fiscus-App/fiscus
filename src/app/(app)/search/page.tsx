@@ -118,8 +118,7 @@ export default function SearchPage() {
   function handleStockTap(stock: Stock) {
     addRecent(stock.ticker)
     setRecent(getRecent())
-    // Navigate to feed filtered by ticker (future: dedicated stock page)
-    router.push(`/feed?ticker=${stock.ticker}`)
+    router.push(`/asset/${stock.ticker}`)
   }
 
   function handleArticleTap(id: string) {
