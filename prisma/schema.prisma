@@ -26,6 +26,7 @@ model User {
   updatedAt               DateTime  @updatedAt
 
   interests      UserInterest[]
+  follows        UserFollow[]
   watchHistory   WatchHistory[]
   insightfulVotes InsightfulVote[]
   saves          Save[]
@@ -59,6 +60,33 @@ model UserInterest {
 
   @@unique([userId, interest])
   @@index([userId])
+}
+
+// ─── FOLLOWING ───────────────────────────────────────────────────────
+// Stores everything a user follows: stocks, sectors, sources, companies.
+
+model UserFollow {
+  id        String          @id @default(cuid())
+  userId    String
+  type      FollowType
+  value     String          // ticker / sector name / source name / company name
+  label     String          // display name
+  meta      String?         // JSON: sectorColor, exchange, etc.
+  createdAt DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, value])
+  @@index([userId])
+  @@index([type])
+}
+
+enum FollowType {
+  STOCK
+  SECTOR
+  SOURCE
+  COMPANY
+  INDEX
 }
 
 // ─── TEAMS ───────────────────────────────────────────────────────────

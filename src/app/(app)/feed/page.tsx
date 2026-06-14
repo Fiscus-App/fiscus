@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { VideoCard } from '@/components/feed/VideoCard'
 import { RefreshCw } from 'lucide-react'
 import type { FeedItem } from '@/types'
@@ -131,6 +132,7 @@ const MOCK_FEED: FeedItem[] = [
 const TABS = ['For You', 'Following', 'Markets', 'ASX']
 
 export default function FeedPage() {
+  const router = useRouter()
   const [tab, setTab]               = useState(0)
   const [items, setItems]           = useState<FeedItem[]>(MOCK_FEED)
   const [cardHeight, setCardHeight] = useState(0)
@@ -215,7 +217,10 @@ export default function FeedPage() {
         {TABS.map((label, i) => (
           <button
             key={label}
-            onClick={() => setTab(i)}
+            onClick={() => {
+              if (label === 'Following') { router.push('/following'); return }
+              setTab(i)
+            }}
             className="relative font-sans font-semibold text-[13px] px-3 py-1 rounded-full bg-transparent border-none cursor-pointer transition-all"
             style={{
               color: tab === i ? '#fff' : 'rgba(255,255,255,0.42)',
