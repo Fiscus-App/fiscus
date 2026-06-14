@@ -1,301 +1,428 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Send, Users, ChevronRight, Circle } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { Users, Plus, LogIn, Copy, Check, ChevronRight, X, MessageSquare } from 'lucide-react'
 
-interface Message {
-  id: string
-  userId: string
-  userName: string
-  content: string
-  createdAt: string
+interface TeamSummary {
+  id:          string
+  name:        string
+  inviteCode:  string
+  memberCount: number
+  members:     { id: string; name: string | null; role: string }[]
+  role:        string
+  lastMessage: { content: string; senderName: string | null; createdAt: string } | null
+  createdAt:   string
 }
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    id: '1',
-    userId: 'alex',
-    userName: 'Alex K.',
-    content: 'RBA decision just dropped. 6-3 hold. Markets are pricing November cut at ~68%.',
-    createdAt: '9:41 AM',
-  },
-  {
-    id: '2',
-    userId: 'sarah',
-    userName: 'Sarah M.',
-    content: 'CBA earnings beat was bigger than expected — NIM held better than I thought. Worth watching the sector reaction.',
-    createdAt: '9:43 AM',
-  },
-  {
-    id: '3',
-    userId: 'me',
-    userName: 'You',
-    content: 'BHP guidance cut has me watching iron ore futures tonight. Pilbara disruption is temporary but Q1 numbers will be soft.',
-    createdAt: '9:47 AM',
-  },
-  {
-    id: '4',
-    userId: 'james',
-    userName: 'James T.',
-    content: 'Woodside LNG deal is interesting — $2.35B acquisition doubling capacity. Big equity raise coming.',
-    createdAt: '9:52 AM',
-  },
-  {
-    id: '5',
-    userId: 'alex',
-    userName: 'Alex K.',
-    content: 'Gold at $3,298 is insane. Real yields going negative again. Central bank buying not slowing down.',
-    createdAt: '10:01 AM',
-  },
-]
+// ── Relative time ─────────────────────────────────────────────────────────────
+function rel(d: string) {
+  const m = Math.floor((Date.now() - new Date(d).getTime()) / 60_000)
+  if (m < 1)  return 'just now'
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
 
-const TEAM_MEMBERS = [
-  { id: 'alex',  name: 'Alex K.',  initials: 'AK', color: '#5b8af5' },
-  { id: 'sarah', name: 'Sarah M.', initials: 'SM', color: '#22d48a' },
-  { id: 'james', name: 'James T.', initials: 'JT', color: '#a78bfa' },
-  { id: 'me',    name: 'You',      initials: 'B',  color: '#e8b84b' },
-]
+// ── Avatar stack ──────────────────────────────────────────────────────────────
+const MEMBER_COLOURS = ['#5b8af5','#22d48a','#a78bfa','#f97316','#e8b84b','#06b6d4','#ec4899']
+function memberColour(id: string) {
+  let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff
+  return MEMBER_COLOURS[Math.abs(h) % MEMBER_COLOURS.length]
+}
+function initials(name: string | null) {
+  if (!name) return '?'
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+}
 
-function Avatar({ userId, size = 30 }: { userId: string; size?: number }) {
-  const member = TEAM_MEMBERS.find((m) => m.id === userId)
-  if (!member) return null
-  const r = size / 2
+// ── Create team modal ─────────────────────────────────────────────────────────
+function CreateModal({ onClose, onCreate }: {
+  onClose:  () => void
+  onCreate: (team: TeamSummary) => void
+}) {
+  const [name, setName]     = useState('')
+  const [desc, setDesc]     = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState('')
+
+  async function submit() {
+    if (!name.trim()) return setErr('Team name is required')
+    setSaving(true); setErr('')
+    try {
+      const res = await fetch('/api/teams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), description: desc.trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok) return setErr(data.error ?? 'Failed to create team')
+      onCreate(data.team)
+    } catch { setErr('Network error') } finally { setSaving(false) }
+  }
+
   return (
-    <div
-      className="flex-shrink-0 flex items-center justify-center font-bold"
-      style={{
-        width: size, height: size, borderRadius: r,
-        fontSize: size * 0.33,
-        background: `${member.color}18`,
-        border: `1.5px solid ${member.color}50`,
-        color: member.color,
-      }}
-    >
-      {member.initials}
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-4"
+      style={{ background: 'rgba(5,8,26,0.7)', backdropFilter: 'blur(6px)' }}>
+      <div className="w-full max-w-lg rounded-3xl overflow-hidden"
+        style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: '1px solid var(--line)' }}>
+          <span className="font-serif font-semibold text-[17px]">New Team</span>
+          <button onClick={onClose} className="flex items-center justify-center"
+            style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--bg-3)', color: 'var(--text-muted)' }}>
+            <X size={13} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        {/* Fields */}
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5"
+              style={{ color: 'var(--text-muted)' }}>Team Name</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+              placeholder="e.g. ASX Research Desk"
+              className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
+              style={{ background: 'var(--bg-3)', border: '1px solid var(--line-2)', color: 'var(--text-primary)' }}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5"
+              style={{ color: 'var(--text-muted)' }}>Description (optional)</label>
+            <input
+              value={desc}
+              onChange={e => setDesc(e.target.value)}
+              placeholder="What does this team discuss?"
+              className="w-full rounded-xl px-3.5 py-2.5 text-[14px] outline-none"
+              style={{ background: 'var(--bg-3)', border: '1px solid var(--line-2)', color: 'var(--text-primary)' }}
+            />
+          </div>
+          {err && <p className="text-[11px]" style={{ color: 'var(--red)' }}>{err}</p>}
+        </div>
+
+        <div className="px-5 pb-5">
+          <button
+            onClick={submit}
+            disabled={saving || !name.trim()}
+            className="w-full py-3 rounded-2xl font-semibold text-[14px] transition-all disabled:opacity-40"
+            style={{
+              background: 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)',
+              color: '#05081a',
+              boxShadow: '0 0 20px rgba(232,184,75,0.20)',
+            }}
+          >
+            {saving ? 'Creating…' : 'Create Team'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
 
-export default function TeamsPage() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES)
-  const [draft, setDraft]       = useState('')
-  const bottomRef               = useRef<HTMLDivElement>(null)
+// ── Join team modal ───────────────────────────────────────────────────────────
+function JoinModal({ onClose, onJoin }: {
+  onClose: () => void
+  onJoin:  (teamId: string) => void
+}) {
+  const [code, setCode]     = useState('')
+  const [joining, setJoining] = useState(false)
+  const [err, setErr]       = useState('')
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  const handleSend = () => {
-    const text = draft.trim()
-    if (!text) return
-    const msg: Message = {
-      id: String(Date.now()),
-      userId: 'me',
-      userName: 'You',
-      content: text,
-      createdAt: new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false }),
-    }
-    setMessages((prev) => [...prev, msg])
-    setDraft('')
-  }
-
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
+  async function submit() {
+    const clean = code.trim().toUpperCase()
+    if (!clean) return setErr('Enter an invite code')
+    setJoining(true); setErr('')
+    try {
+      const res = await fetch('/api/teams/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: clean }),
+      })
+      const data = await res.json()
+      if (!res.ok) return setErr(data.error ?? 'Invalid code')
+      onJoin(data.teamId)
+    } catch { setErr('Network error') } finally { setJoining(false) }
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ background: 'var(--bg)' }}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-4"
+      style={{ background: 'rgba(5,8,26,0.7)', backdropFilter: 'blur(6px)' }}>
+      <div className="w-full max-w-lg rounded-3xl overflow-hidden"
+        style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
 
-      {/* ── Channel header ───────────────────────────────────────────────── */}
-      <div
-        className="flex-shrink-0 px-4 py-3 flex items-center justify-between"
-        style={{
-          background: 'rgba(10,16,32,0.95)',
-          borderBottom: '1px solid var(--line)',
-          backdropFilter: 'blur(12px)',
-        }}
-      >
-        <div className="flex items-center gap-3">
-          {/* Channel avatar */}
-          <div
-            className="flex items-center justify-center"
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: 'rgba(91,138,245,0.12)',
-              border: '1px solid rgba(91,138,245,0.28)',
-            }}
-          >
-            <Users size={16} strokeWidth={1.8} style={{ color: 'var(--blue)' }} />
-          </div>
-
-          <div>
-            <div className="font-semibold text-[13px]" style={{ letterSpacing: '-0.01em' }}>
-              ASX Research Desk
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <Circle size={6} fill="var(--green)" style={{ color: 'var(--green)' }} />
-              <span className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
-                4 members · 3 online
-              </span>
-            </div>
-          </div>
+        <div className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: '1px solid var(--line)' }}>
+          <span className="font-serif font-semibold text-[17px]">Join a Team</span>
+          <button onClick={onClose} className="flex items-center justify-center"
+            style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--bg-3)', color: 'var(--text-muted)' }}>
+            <X size={13} strokeWidth={2.5} />
+          </button>
         </div>
 
-        {/* Member stack */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center" style={{ gap: -4 }}>
-            {TEAM_MEMBERS.slice(0, 3).map((m, i) => (
-              <div
-                key={m.id}
-                className="flex items-center justify-center font-bold"
-                style={{
-                  width: 22, height: 22, borderRadius: 11,
-                  fontSize: 8,
-                  background: `${m.color}20`,
-                  border: `1.5px solid ${m.color}60`,
-                  color: m.color,
-                  marginLeft: i > 0 ? -6 : 0,
-                  zIndex: 3 - i,
-                  position: 'relative',
-                }}
-              >
-                {m.initials}
-              </div>
-            ))}
-          </div>
-          <button style={{ color: 'var(--text-muted)', marginLeft: 4 }}>
-            <ChevronRight size={15} strokeWidth={2} />
+        <div className="px-5 py-4">
+          <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5"
+            style={{ color: 'var(--text-muted)' }}>Invite Code</label>
+          <input
+            autoFocus
+            value={code}
+            onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+            placeholder="XXXX-XXXX"
+            className="w-full rounded-xl px-3.5 py-2.5 text-[16px] font-mono outline-none tracking-widest text-center"
+            style={{ background: 'var(--bg-3)', border: '1px solid var(--line-2)', color: 'var(--text-primary)' }}
+            maxLength={9}
+          />
+          {err && <p className="text-[11px] mt-2" style={{ color: 'var(--red)' }}>{err}</p>}
+          <p className="text-[11px] mt-2 text-center" style={{ color: 'var(--text-muted)' }}>
+            Ask a team member to share their invite code with you
+          </p>
+        </div>
+
+        <div className="px-5 pb-5">
+          <button
+            onClick={submit}
+            disabled={joining || code.trim().length < 9}
+            className="w-full py-3 rounded-2xl font-semibold text-[14px] transition-all disabled:opacity-40"
+            style={{ background: 'var(--bg-3)', border: '1px solid rgba(232,184,75,0.30)', color: 'var(--gold)' }}
+          >
+            {joining ? 'Joining…' : 'Join Team'}
           </button>
         </div>
       </div>
+    </div>
+  )
+}
 
-      {/* ── Date divider ─────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
-        <span className="text-[9px] font-mono tracking-widest uppercase" style={{ color: 'var(--text-faint)' }}>
-          Today
-        </span>
-        <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
-      </div>
+// ── Invite code copy pill ─────────────────────────────────────────────────────
+function InviteCode({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false)
+  function copy(e: React.MouseEvent) {
+    e.stopPropagation()
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <button
+      onClick={copy}
+      className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all"
+      style={{
+        background: copied ? 'rgba(34,212,138,0.12)' : 'var(--bg-3)',
+        border: copied ? '1px solid rgba(34,212,138,0.3)' : '1px solid var(--line)',
+        color: copied ? 'var(--green)' : 'var(--text-muted)',
+      }}
+    >
+      {copied ? <Check size={9} strokeWidth={3} /> : <Copy size={9} strokeWidth={2} />}
+      {code}
+    </button>
+  )
+}
 
-      {/* ── Messages ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto scroll-y px-4 pb-3 space-y-3">
-        {messages.map((msg, idx) => {
-          const isMe      = msg.userId === 'me'
-          const member    = TEAM_MEMBERS.find((m) => m.id === msg.userId)
-          const prevMsg   = idx > 0 ? messages[idx - 1] : null
-          const showAvtr  = !isMe && (prevMsg?.userId !== msg.userId)
-
-          return (
-            <div
-              key={msg.id}
-              className={`flex items-end gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
-            >
-              {/* Avatar — only shown on first message in a group */}
-              {!isMe && (
-                <div style={{ width: 30, flexShrink: 0 }}>
-                  {showAvtr && <Avatar userId={msg.userId} />}
-                </div>
-              )}
-
-              <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[80%]`}>
-                {/* Sender name */}
-                {!isMe && showAvtr && (
-                  <span
-                    className="text-[10px] font-semibold mb-1 ml-1"
-                    style={{ color: member?.color ?? 'var(--text-muted)' }}
-                  >
-                    {msg.userName}
-                  </span>
-                )}
-
-                {/* Bubble */}
-                <div
-                  className="rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed"
-                  style={{
-                    background: isMe
-                      ? 'linear-gradient(135deg, rgba(232,184,75,0.15) 0%, rgba(232,184,75,0.08) 100%)'
-                      : 'var(--bg-3)',
-                    border: `1px solid ${isMe ? 'rgba(232,184,75,0.28)' : 'var(--line-2)'}`,
-                    color: isMe ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    borderBottomRightRadius: isMe ? 6 : undefined,
-                    borderBottomLeftRadius: !isMe ? 6 : undefined,
-                    backdropFilter: 'blur(8px)',
-                    boxShadow: isMe
-                      ? '0 2px 12px rgba(232,184,75,0.08)'
-                      : '0 2px 8px rgba(0,0,0,0.2)',
-                  }}
-                >
-                  {msg.content}
-                </div>
-
-                {/* Timestamp */}
-                <span
-                  className="text-[9.5px] mt-1 mx-1 font-mono"
-                  style={{ color: 'var(--text-faint)' }}
-                >
-                  {msg.createdAt}
-                </span>
-              </div>
-            </div>
-          )
-        })}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* ── Composer ─────────────────────────────────────────────────────── */}
-      <div
-        className="flex-shrink-0 flex items-center gap-2.5 px-3 py-3"
-        style={{
-          background: 'rgba(8,12,24,0.96)',
-          borderTop: '1px solid var(--line)',
-          backdropFilter: 'blur(16px)',
-        }}
-      >
-        <Avatar userId="me" />
-
-        <div
-          className="flex-1 flex items-center gap-2 rounded-xl px-3.5 py-2.5"
+// ── Team card ─────────────────────────────────────────────────────────────────
+function TeamCard({ team, onClick }: { team: TeamSummary; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left rounded-2xl p-4 transition-all active:scale-[0.98]"
+      style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}
+    >
+      <div className="flex items-start gap-3">
+        {/* Icon */}
+        <div className="flex-shrink-0 flex items-center justify-center"
           style={{
-            background: 'var(--bg-3)',
-            border: '1px solid var(--line-2)',
-            transition: 'border-color 0.2s',
-          }}
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKey}
-            placeholder="Share an insight…"
-            rows={1}
-            className="flex-1 bg-transparent text-[13px] resize-none outline-none"
-            style={{
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              lineHeight: 1.5,
-            }}
-          />
+            width: 44, height: 44, borderRadius: 14,
+            background: 'rgba(91,138,245,0.10)',
+            border: '1px solid rgba(91,138,245,0.22)',
+          }}>
+          <Users size={18} strokeWidth={1.8} style={{ color: '#5b8af5' }} />
         </div>
 
-        <button
-          onClick={handleSend}
-          disabled={!draft.trim()}
-          className="flex items-center justify-center transition-all disabled:opacity-25"
-          style={{
-            width: 38, height: 38, borderRadius: 12, flexShrink: 0,
-            background: draft.trim()
-              ? 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)'
-              : 'var(--bg-4)',
-            color: draft.trim() ? '#05081a' : 'var(--text-muted)',
-            boxShadow: draft.trim() ? '0 0 16px rgba(232,184,75,0.28)' : 'none',
-          }}
-        >
-          <Send size={15} strokeWidth={2.5} />
-        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-semibold text-[14px] truncate">{team.name}</span>
+            <ChevronRight size={14} strokeWidth={2} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          </div>
+
+          {/* Last message preview */}
+          {team.lastMessage ? (
+            <p className="text-[11px] truncate mb-2" style={{ color: 'var(--text-muted)' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>{team.lastMessage.senderName ?? 'Someone'}: </span>
+              {team.lastMessage.content}
+              <span className="ml-1" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                · {rel(team.lastMessage.createdAt)}
+              </span>
+            </p>
+          ) : (
+            <p className="text-[11px] mb-2" style={{ color: 'var(--text-muted)' }}>No messages yet</p>
+          )}
+
+          <div className="flex items-center justify-between">
+            {/* Member avatars */}
+            <div className="flex items-center">
+              {team.members.slice(0, 4).map((m, i) => (
+                <div key={m.id}
+                  className="flex items-center justify-center font-bold"
+                  style={{
+                    width: 20, height: 20, borderRadius: 10,
+                    fontSize: 7,
+                    background: `${memberColour(m.id)}20`,
+                    border: `1.5px solid ${memberColour(m.id)}60`,
+                    color: memberColour(m.id),
+                    marginLeft: i > 0 ? -5 : 0,
+                    position: 'relative',
+                    zIndex: 4 - i,
+                  }}>
+                  {initials(m.name)}
+                </div>
+              ))}
+              {team.memberCount > 4 && (
+                <span className="text-[9px] ml-1.5" style={{ color: 'var(--text-muted)' }}>
+                  +{team.memberCount - 4}
+                </span>
+              )}
+            </div>
+            <InviteCode code={team.inviteCode} />
+          </div>
+        </div>
       </div>
+    </button>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+export default function TeamsPage() {
+  const router = useRouter()
+  const [teams, setTeams]       = useState<TeamSummary[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [modal, setModal]       = useState<'create' | 'join' | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/teams')
+      if (res.ok) {
+        const data = await res.json()
+        setTeams(data.teams ?? [])
+      }
+    } catch { /* keep empty */ } finally { setLoading(false) }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function handleCreated(team: TeamSummary) {
+    setTeams(prev => [team, ...prev])
+    setModal(null)
+    router.push(`/teams/${team.id}`)
+  }
+
+  function handleJoined(teamId: string) {
+    setModal(null)
+    load() // refresh list
+    router.push(`/teams/${teamId}`)
+  }
+
+  return (
+    <div className="h-full overflow-y-auto scroll-y" style={{ background: 'var(--bg)' }}>
+      <div className="px-4 pt-5 pb-8">
+
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="font-serif font-semibold text-[22px]" style={{ letterSpacing: '-0.02em' }}>
+              Teams
+            </h1>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Private group chats for your circle
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setModal('join')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold"
+              style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--text-secondary)' }}
+            >
+              <LogIn size={13} strokeWidth={2} />
+              Join
+            </button>
+            <button
+              onClick={() => setModal('create')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold"
+              style={{
+                background: 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)',
+                color: '#05081a',
+                boxShadow: '0 0 14px rgba(232,184,75,0.18)',
+              }}
+            >
+              <Plus size={13} strokeWidth={2.5} />
+              New
+            </button>
+          </div>
+        </div>
+
+        {/* ── Team list ───────────────────────────────────────────────────── */}
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="animate-spin rounded-full"
+              style={{ width: 24, height: 24, border: '2px solid var(--line)', borderTopColor: 'var(--gold)' }} />
+          </div>
+        ) : teams.length === 0 ? (
+          // Empty state
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="flex items-center justify-center mb-5"
+              style={{
+                width: 80, height: 80, borderRadius: 24,
+                background: 'linear-gradient(135deg, rgba(91,138,245,0.10) 0%, rgba(91,138,245,0.04) 100%)',
+                border: '1px solid rgba(91,138,245,0.18)',
+              }}>
+              <MessageSquare size={34} strokeWidth={1.4} style={{ color: '#5b8af5' }} />
+            </div>
+            <h2 className="font-serif font-semibold text-[19px] mb-2" style={{ letterSpacing: '-0.02em' }}>
+              No teams yet
+            </h2>
+            <p className="text-[13px] mb-7" style={{ color: 'var(--text-muted)', maxWidth: 260 }}>
+              Create a private group to discuss markets with your circle, or join one with an invite code.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setModal('join')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-semibold"
+                style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--text-secondary)' }}
+              >
+                <LogIn size={14} strokeWidth={2} />
+                Join with code
+              </button>
+              <button
+                onClick={() => setModal('create')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[13px] font-semibold"
+                style={{
+                  background: 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)',
+                  color: '#05081a',
+                  boxShadow: '0 0 20px rgba(232,184,75,0.22)',
+                }}
+              >
+                <Plus size={14} strokeWidth={2.5} />
+                Create team
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {teams.map(t => (
+              <TeamCard key={t.id} team={t} onClick={() => router.push(`/teams/${t.id}`)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {modal === 'create' && <CreateModal onClose={() => setModal(null)} onCreate={handleCreated} />}
+      {modal === 'join'   && <JoinModal   onClose={() => setModal(null)} onJoin={handleJoined} />}
     </div>
   )
 }
