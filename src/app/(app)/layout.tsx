@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import { TickerTape } from '@/components/markets/TickerTape'
+import { NotificationsDrawer } from '@/components/NotificationsDrawer'
 import { Zap, TrendingUp, Users, Bookmark, Search, Bell } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -20,7 +21,7 @@ const NAV_H    = 70
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const [_notif, setNotif] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
   const isFeed = pathname.startsWith('/feed')
 
   const userInitial = session?.user?.name
@@ -106,21 +107,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Notifications */}
           <button
-            onClick={() => setNotif((o) => !o)}
+            onClick={() => setNotifOpen(o => !o)}
             className="relative flex items-center justify-center"
             style={{
               width: 34, height: 34, borderRadius: 10,
-              background: 'var(--bg-3)',
-              border: '1px solid var(--line-2)',
-              color: 'var(--text-secondary)',
+              background: notifOpen ? 'rgba(232,184,75,0.14)' : 'var(--bg-3)',
+              border: notifOpen ? '1px solid rgba(232,184,75,0.35)' : '1px solid var(--line-2)',
+              color: notifOpen ? 'var(--gold)' : 'var(--text-secondary)',
+              transition: 'all 0.2s ease',
             }}>
             <Bell size={14} strokeWidth={2} />
-            <span
-              className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold"
-              style={{ background: 'var(--red)', color: '#fff', border: '1.5px solid var(--bg)' }}
-            >
-              3
-            </span>
           </button>
 
           {/* Avatar */}
@@ -145,6 +141,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 overflow-hidden">
         {children}
       </main>
+
+      {/* ── Notifications drawer ───────────────────────────────────────────── */}
+      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
 
       {/* ── Bottom nav ─────────────────────────────────────────────────────── */}
       <nav
