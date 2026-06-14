@@ -38,10 +38,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, processed: 0, message: 'Nothing to process' })
   }
 
-  const results: { id: string; title: string; status: 'ok' | 'error'; error?: string }[] = []
+  // Sources that mix finance with general news — apply AI screen even if keywords pass
+  const STRICT_SCREEN_SOURCES = new Set([
+    'abc-business', 'smh-business', 'theage-business',
+    'guardian-australia-business', 'reuters-business',
+    'the-australian-business',
+  ])
+
+  const results: { id: string; title: string; status: 'ok' | 'skipped' | 'error'; error?: string; reason?: string }[] = []
 
   for (const article of pending) {
     try {
+      const strictScreen = STRICT_SCREEN_SOURCES.has(article.sourceId)
+
       // ── AI enrichment (summary, tickers, sector) ──────────────────────────
       const enriched = await enrichArticle({
         title: article.title,
@@ -50,7 +59,19 @@ export async function POST(req: NextRequest) {
         bodyText: article.bodyText ?? '',
         publishedAt: article.publishedAt,
         sourceId: article.sourceId,
-      })
+      }, strictScreen)
+
+      // ── Reject off-topic articles — mark with a non-null sentinel summary ──
+      if ('rejected' in enriched) {
+        console.log(`[process] REJECTED (off-topic): ${article.title.slice(0, 60)} — ${enriched.reason}`)
+        // Write a sentinel so this article is never re-queued
+        await db.article.update({
+          where: { id: article.id },
+          data: { summary: '__REJECTED__', topicTags: ['__rejected__'], relatedTickers: [] },
+        })
+        results.push({ id: article.id, title: article.title, status: 'skipped', reason: enriched.reason })
+        continue
+      }
 
       // ── Generate video script ──────────────────────────────────────────────
       const primaryTicker = enriched.relatedTickers[0] ?? 'ASX'

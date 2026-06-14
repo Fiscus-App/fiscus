@@ -36,7 +36,7 @@ export async function GET() {
 
     const articles = await db.article.findMany({
       where: {
-        summary: { not: null },
+        summary: { not: null, notIn: ['__REJECTED__'] },
         OR: orFilters,
       },
       include: {

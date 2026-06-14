@@ -1,6 +1,6 @@
 import Parser from 'rss-parser'
 import axios from 'axios'
-import { summariseArticle, extractTickers, classifySector } from '../ai/summarise'
+import { summariseArticle, extractTickers, classifySector, isFinanceRelevantFast, checkFinanceRelevance } from '../ai/summarise'
 import { SOURCES, ASX_WATCHLIST, type SourceDefinition } from './sources'
 
 const rssParser = new Parser({
@@ -24,6 +24,13 @@ export interface EnrichedArticle extends RawArticle {
   relatedTickers: string[]
   sector: string
   topicTags: string[]
+}
+
+// Returned when an article fails the finance relevance screen
+export interface RejectedArticle {
+  rejected: true
+  reason: string
+  title: string
 }
 
 // ─── RSS Ingestion ────────────────────────────────────────────────────────────
@@ -150,8 +157,30 @@ async function ingestSource(source: SourceDefinition): Promise<RawArticle[]> {
 
 // ─── AI Enrichment ───────────────────────────────────────────────────────────
 
-export async function enrichArticle(article: RawArticle): Promise<EnrichedArticle> {
+export async function enrichArticle(
+  article: RawArticle,
+  // Sources that mix finance with other topics need the AI screen too
+  strictScreen = false
+): Promise<EnrichedArticle | RejectedArticle> {
   const text = `${article.title} ${article.bodyText || ''}`
+
+  // ── Step 1: fast keyword pre-screen (free, instant) ──────────────────────
+  const passedKeywords = isFinanceRelevantFast(article.title, article.bodyText || '')
+
+  if (!passedKeywords) {
+    // ── Step 2: AI screen only when keyword screen fails or strict mode ────
+    // (strict mode is used for broadsheet sources like ABC, Guardian, SMH)
+    const { relevant, reason } = await checkFinanceRelevance(article.title, article.bodyText || '')
+    if (!relevant) {
+      return { rejected: true, reason, title: article.title }
+    }
+  } else if (strictScreen) {
+    // Keyword passed but source is mixed — do AI confirm anyway
+    const { relevant, reason } = await checkFinanceRelevance(article.title, article.bodyText || '')
+    if (!relevant) {
+      return { rejected: true, reason, title: article.title }
+    }
+  }
 
   const [summary, relatedTickers, sector] = await Promise.all([
     summariseArticle(article.title, article.bodyText || ''),

@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const where: Record<string, unknown> = {
-      summary: { not: null }, // only show AI-processed articles
+      // Only show AI-processed articles; exclude off-topic rejections
+      summary: { not: null, notIn: ['__REJECTED__'] },
     }
 
     if (sector) where.sector = sector
