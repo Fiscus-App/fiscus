@@ -37,14 +37,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         className="flex-shrink-0 flex items-center justify-between px-4 z-30"
         style={{
           height: HEADER_H,
-          background: isFeed
-            ? 'linear-gradient(180deg, rgba(5,8,26,0.92) 0%, transparent 100%)'
-            : 'rgba(8,12,24,0.96)',
+          background: 'rgba(8,12,24,0.98)',
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          borderBottom: isFeed ? 'none' : '1px solid rgba(232,184,75,0.10)',
-          position: isFeed ? 'absolute' : 'relative',
-          top: 0, left: 0, right: 0,
+          borderBottom: '1px solid rgba(232,184,75,0.10)',
         }}
       >
         {/* Logo */}
@@ -101,10 +97,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             className="flex items-center justify-center"
             style={{
               width: 34, height: 34, borderRadius: 10,
-              background: isFeed ? 'rgba(255,255,255,0.08)' : 'var(--bg-3)',
-              border: `1px solid ${isFeed ? 'rgba(255,255,255,0.14)' : 'var(--line-2)'}`,
-              color: isFeed ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)',
-              backdropFilter: isFeed ? 'blur(8px)' : 'none',
+              background: 'var(--bg-3)',
+              border: '1px solid var(--line-2)',
+              color: 'var(--text-secondary)',
             }}>
             <Search size={14} strokeWidth={2} />
           </Link>
@@ -115,10 +110,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             className="relative flex items-center justify-center"
             style={{
               width: 34, height: 34, borderRadius: 10,
-              background: isFeed ? 'rgba(255,255,255,0.08)' : 'var(--bg-3)',
-              border: `1px solid ${isFeed ? 'rgba(255,255,255,0.14)' : 'var(--line-2)'}`,
-              color: isFeed ? 'rgba(255,255,255,0.8)' : 'var(--text-secondary)',
-              backdropFilter: isFeed ? 'blur(8px)' : 'none',
+              background: 'var(--bg-3)',
+              border: '1px solid var(--line-2)',
+              color: 'var(--text-secondary)',
             }}>
             <Bell size={14} strokeWidth={2} />
             <span
@@ -148,10 +142,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {!isFeed && <TickerTape />}
 
       {/* ── Page content ───────────────────────────────────────────────────── */}
-      <main
-        className="flex-1 overflow-hidden"
-        style={{ position: isFeed ? 'relative' : undefined, marginTop: isFeed ? -HEADER_H : 0 }}
-      >
+      <main className="flex-1 overflow-hidden">
         {children}
       </main>
 

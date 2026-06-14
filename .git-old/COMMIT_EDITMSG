@@ -1,0 +1,27 @@
+feat: premium UI redesign + brand identity
+
+Design system (globals.css):
+- Gold: #d4a843 -> #e8b84b (warmer, more vibrant)
+- New tokens: glass-bg, glow shadows, gold-vivid, green-b, red-b
+- Utility classes: .glass, .card-premium, .border-gold-glow
+
+App shell (layout.tsx):
+- Header 48->58px: frosted glass + gradient gold logo mark
+- TrendingUp icon mark next to Fiscus wordmark
+- Bottom nav 58->70px: gold active-indicator pill at top
+- Icon glow on active state
+
+Feed: pill tabs with glass morphism, nav height fix (70px)
+VideoCard: richer ambient glow, deeper background, gold avatar ring
+
+Markets page: gradient hero card, directional ambient glow,
+bordered ChangeChip, gold-accent section headers, rounded-2xl cards
+
+Teams: glass message bubbles, member stack, group avatars
+Saved: colour accent strip, editorial cards, gold read button
+Profile: hero with radial glow, gradient avatar ring
+
+Logos (public/):
+- logo-wordmark.svg, logo-app-icon.svg, logo-brand.svg
+
+Brand identity: Fiscus_Brand_Identity.docx

@@ -155,10 +155,10 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
           )}
         </div>
 
-        {/* Top gradient — header fade */}
+        {/* Top gradient — subtle fade for tabs */}
         <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{
-          height: 130,
-          background: 'linear-gradient(180deg, rgba(5,8,26,0.92) 0%, rgba(5,8,26,0.5) 60%, transparent 100%)',
+          height: 80,
+          background: 'linear-gradient(180deg, rgba(5,8,26,0.70) 0%, transparent 100%)',
         }} />
         {/* Bottom gradient — text readability */}
         <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{

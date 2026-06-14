@@ -1,0 +1,19 @@
+0000000000000000000000000000000000000000 ebc417308e575f4dad710bcd37dc2f74c6fb851b peaceful-great-pascal <peaceful-great-pascal@claude.(none)> 1780649933 +0000	clone: from https://github.com/JackTakurua/fiscus.git
+ebc417308e575f4dad710bcd37dc2f74c6fb851b c8ce55e28b6a4cb8985ff47038b782987644bed3 Jack <jack@fiscus.app> 1780972601 +1200	commit: feat: authentication - login, signup, NextAuth, protected routes
+c8ce55e28b6a4cb8985ff47038b782987644bed3 fb23c9d20d4de026e7f9ac751e733d34fcfcd953 Jack <jack@fiscus.app> 1780981021 +1200	rebase (finish): refs/heads/main onto fd3cb3f1dc38a27f887676cb536a06245f6d9485
+fb23c9d20d4de026e7f9ac751e733d34fcfcd953 36567ec835180fe19241b0d91259c65bb5127a86 Jack <jack@fiscus.app> 1780981085 +1200	commit (amend): feat: authentication - login, signup, NextAuth, protected routes
+36567ec835180fe19241b0d91259c65bb5127a86 9a2425b1eabb11948998023549629a7d39dcf734 Jack <jack@fiscus.app> 1780981164 +1200	commit (amend): feat: authentication - login, signup, NextAuth, protected routes
+9a2425b1eabb11948998023549629a7d39dcf734 4fb99d9f14611c618a7b10d1d07f1f73c10a00d5 Jack <jack@fiscus.app> 1780982533 +0000	commit: chore: trigger Vercel redeploy
+4fb99d9f14611c618a7b10d1d07f1f73c10a00d5 4efad9b1c828a0d5cb0b69dc2d4a88a386098c86 Jack <jack@fiscus.app> 1780984577 +1200	commit: feat: add Google OAuth provider to login and signup
+4efad9b1c828a0d5cb0b69dc2d4a88a386098c86 ad527b1fda9d44ff68d3ea80cf1f19f8b13dcaf3 Jack <jack@fiscus.app> 1780987156 +1200	commit: feat: persist saves and insightful votes to DB (3.6)
+ad527b1fda9d44ff68d3ea80cf1f19f8b13dcaf3 24b555243955121c1fe41b28a509c5c493fa3bdb Jack <jack@fiscus.app> 1781057183 +1200	commit: feat: real profile stats, name editing, live saved page (3.7)
+24b555243955121c1fe41b28a509c5c493fa3bdb 648a9c92e0c5a98498f63c0ce5bec91c3defed3a Jack <jack@fiscus.app> 1781058073 +1200	commit: feat: email verification via Resend (3.8)
+648a9c92e0c5a98498f63c0ce5bec91c3defed3a bd24ea6b61f0a84b922865a1a350a8adaf8fd5dc Jack <jack@fiscus.app> 1781058608 +1200	commit: feat: password reset flow (3.9)
+bd24ea6b61f0a84b922865a1a350a8adaf8fd5dc a9f615c78f560ac0cb2ad5d881bf2c8ad4ef0f24 Jack <jack@fiscus.app> 1781059123 +1200	commit: feat: Yahoo Finance market data API + live markets page (4.1.1, 4.1.3)
+a9f615c78f560ac0cb2ad5d881bf2c8ad4ef0f24 f2b9b16723bf177dddcc6222ebdf323288ec8a52 Jack <jack@fiscus.app> 1781059278 +1200	commit: fix: use Array.from for Set spread (TS downlevelIteration)
+f2b9b16723bf177dddcc6222ebdf323288ec8a52 9be9e88c587c22857e1b9b77aa3ce70943573859 Jack <jack@fiscus.app> 1781059354 +1200	commit: fix: Array.from for Map iterators (TS downlevelIteration)
+9be9e88c587c22857e1b9b77aa3ce70943573859 7da27e7dc97d36f4eb52cb95dee8e7537d943259 Jack <jack@fiscus.app> 1781059662 +1200	commit: fix: Yahoo Finance cookie+crumb auth (required since 2024)
+7da27e7dc97d36f4eb52cb95dee8e7537d943259 034727a0fd03dc4f70ab55b8ee6769653540f1dc Jack <jack@fiscus.app> 1781060088 +1200	commit: fix: markets page always shows data (fallback), edge runtime for Yahoo Finance
+034727a0fd03dc4f70ab55b8ee6769653540f1dc c376fdf08aaf145ec80fa413b1995df8a33c7749 Jack <jack@fiscus.app> 1781060741 +1200	commit: feat: switch market data to Twelve Data API (4.1.2)
+c376fdf08aaf145ec80fa413b1995df8a33c7749 67daa4d84725bc496a1b117d7da5001b924e242d Jack <jack@fiscus.app> 1781060924 +1200	commit: debug: add market data debug endpoint
+b5e36b47af9c294d299e319fc192341219b8b757 b8170a44a8f8d0e36c1f92d3b63085fa29297d2b Claude <fiscus@build.ai> 1781433024 +0000	commit: feat: premium UI redesign + brand identity

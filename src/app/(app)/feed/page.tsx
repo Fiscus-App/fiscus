@@ -137,9 +137,9 @@ export default function FeedPage() {
   const [refreshing, setRefreshing] = useState(false)
   const intervalRef                 = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Full viewport height minus nav (70). Header is overlaid on top of video.
+  // Full viewport height minus header (58) and nav (70).
   useEffect(() => {
-    const update = () => setCardHeight(window.innerHeight - 70)
+    const update = () => setCardHeight(window.innerHeight - 58 - 70)
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
@@ -210,7 +210,7 @@ export default function FeedPage() {
       {/* ── Feed tabs ─────────────────────────────────────────────────── */}
       <div
         className="absolute flex items-center justify-center gap-1 z-20"
-        style={{ top: 54, left: 0, right: 0, paddingLeft: 8, paddingRight: 8 }}
+        style={{ top: 10, left: 0, right: 0, paddingLeft: 8, paddingRight: 8 }}
       >
         {TABS.map((label, i) => (
           <button
