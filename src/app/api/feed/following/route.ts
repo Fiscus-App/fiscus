@@ -41,7 +41,15 @@ export async function GET() {
       },
       include: {
         source: { select: { name: true, credibility: true } },
-        video: { select: { id: true, status: true, videoUrl: true, thumbnailUrl: true } },
+        video: {
+          select: {
+            id: true,
+            status: true,
+            videoUrl: true,
+            script: { select: { fullScript: true } },
+            _count: { select: { insightfulVotes: true } },
+          },
+        },
         insightfulVotes: { where: { userId: session.user.id }, select: { id: true } },
         saves: { where: { userId: session.user.id }, select: { id: true } },
       },
