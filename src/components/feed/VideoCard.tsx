@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import {
-  Heart, Bookmark, Share2, Clapperboard, Play,
+  TrendingUp, Bookmark, Share2, Clapperboard, Play,
   Loader2, Music2, ChevronUp, ChevronDown,
 } from 'lucide-react'
 import { SourceBadge } from './SourceBadge'
@@ -215,14 +215,28 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
           </div>
         </div>
 
-        {/* Insightful / Heart */}
+        {/* Insight / TrendingUp */}
         <button onClick={() => onInsightful(item.id)}
           className="flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer p-0">
-          <Heart size={32} strokeWidth={1.5}
-            fill={item.isInsightful ? 'var(--gold)' : 'none'}
-            style={{ color: item.isInsightful ? 'var(--gold)' : 'white',
-              filter: item.isInsightful ? 'drop-shadow(0 0 8px rgba(212,168,67,0.6))' : 'none' }} />
-          <span className="font-bold text-[12px]" style={{ color: 'white' }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: 12,
+            background: item.isInsightful
+              ? 'linear-gradient(135deg, rgba(232,184,75,0.28), rgba(232,184,75,0.14))'
+              : 'rgba(255,255,255,0.08)',
+            border: item.isInsightful
+              ? '1px solid rgba(232,184,75,0.55)'
+              : '1px solid rgba(255,255,255,0.12)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: item.isInsightful ? '0 0 16px rgba(232,184,75,0.30)' : 'none',
+            transition: 'all 0.2s ease',
+          }}>
+            <TrendingUp size={20} strokeWidth={2.2}
+              style={{
+                color: item.isInsightful ? 'var(--gold)' : 'white',
+                filter: item.isInsightful ? 'drop-shadow(0 0 6px rgba(232,184,75,0.7))' : 'none',
+              }} />
+          </div>
+          <span className="font-bold text-[11px] mt-0.5" style={{ color: item.isInsightful ? 'var(--gold)' : 'rgba(255,255,255,0.7)' }}>
             {item.insightfulCount > 999
               ? `${(item.insightfulCount / 1000).toFixed(1)}k`
               : item.insightfulCount}

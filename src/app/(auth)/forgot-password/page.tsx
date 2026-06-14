@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Zap, ArrowLeft, Mail, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Mail, CheckCircle } from 'lucide-react'
+import { FiscusLogo } from '@/components/FiscusLogo'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail]     = useState('')
@@ -40,12 +41,8 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-sm">
 
         {/* Logo */}
-        <div className="flex flex-col items-center gap-2 mb-8">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-            style={{ background: 'var(--gold-a)', border: '1px solid var(--gold-c)', boxShadow: '0 0 30px rgba(212,168,67,0.15)' }}>
-            <Zap size={26} style={{ color: 'var(--gold)' }} strokeWidth={2} />
-          </div>
-          <span className="font-serif text-2xl font-semibold" style={{ color: 'var(--gold)' }}>Fiscus</span>
+        <div className="mb-8">
+          <FiscusLogo />
         </div>
 
         {sent ? (

@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Eye, EyeOff, Zap, Check } from 'lucide-react'
+import { Eye, EyeOff, Check } from 'lucide-react'
+import { FiscusLogo } from '@/components/FiscusLogo'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -72,23 +73,8 @@ export default function SignupPage() {
       <div className="w-full max-w-sm">
 
         {/* Logo */}
-        <div className="flex flex-col items-center gap-2 mb-8">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center"
-            style={{
-              background: 'var(--gold-a)',
-              border: '1px solid var(--gold-c)',
-              boxShadow: '0 0 30px rgba(212,168,67,0.15)',
-            }}
-          >
-            <Zap size={26} style={{ color: 'var(--gold)' }} strokeWidth={2} />
-          </div>
-          <span className="font-serif text-2xl font-semibold" style={{ color: 'var(--gold)' }}>
-            Fiscus
-          </span>
-          <span className="text-[12px] font-mono tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            Australian Financial Intelligence
-          </span>
+        <div className="mb-8">
+          <FiscusLogo showTagline />
         </div>
 
         {/* Card */}
