@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, X, TrendingUp, ArrowUpRight, Clock, ChevronRight } from 'lucide-react'
+import { Search, X, ArrowUpRight, Clock } from 'lucide-react'
 
 interface Stock {
   ticker: string
@@ -21,10 +21,29 @@ interface Article {
   source: { name: string }
 }
 
+interface DiscoverStock {
+  ticker: string
+  name: string
+  sector: string
+  sectorColor: string
+  change: number
+  price: number
+  volume?: string
+  note?: string
+}
+
+interface DiscoverCategory {
+  id: string
+  label: string
+  icon: string
+  stocks: DiscoverStock[]
+  ghost: true
+}
+
 interface SearchResults {
   stocks: Stock[]
   articles: Article[]
-  trending: Stock[] | null
+  trending: DiscoverCategory[] | null
 }
 
 const RECENT_KEY = 'fiscus_recent_searches'
@@ -145,21 +164,17 @@ export default function SearchPage() {
 
       <div className="px-4 pb-8">
 
-        {/* ── Empty state: Trending + Recent ─────────────────────────── */}
+        {/* ── Empty state: Recent + Discover categories ──────────────── */}
         {isEmpty && (
           <>
             {/* Recent searches */}
             {recent.length > 0 && (
-              <div className="mt-5 mb-6">
+              <div className="mt-5 mb-2">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
-                    style={{ color: 'var(--text-muted)' }}>
-                    Recent
-                  </span>
+                    style={{ color: 'var(--text-muted)' }}>Recent</span>
                   <button onClick={() => { clearRecent(); setRecent([]) }}
-                    className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    Clear
-                  </button>
+                    className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Clear</button>
                 </div>
                 <div className="flex flex-col gap-1">
                   {recent.map(r => (
@@ -174,39 +189,77 @@ export default function SearchPage() {
               </div>
             )}
 
-            {/* Trending */}
-            {results?.trending && (
-              <div>
-                <div className="flex items-center gap-2 mb-3 mt-5">
-                  <TrendingUp size={12} style={{ color: 'var(--gold)' }} />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
-                    style={{ color: 'var(--text-muted)' }}>
-                    Trending
-                  </span>
+            {/* Discover categories */}
+            {results?.trending?.map(cat => (
+              <div key={cat.id} className="mt-6">
+                {/* Category header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontSize: 14 }}>{cat.icon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
+                      style={{ color: 'var(--text-muted)' }}>{cat.label}</span>
+                    <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                      style={{ background: 'rgba(232,184,75,0.08)', color: 'rgba(232,184,75,0.50)', border: '1px solid rgba(232,184,75,0.12)' }}>
+                      SIMULATED
+                    </span>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {results.trending.map(s => (
-                    <button key={s.ticker} onClick={() => handleStockTap(s)}
-                      className="flex items-center gap-3 px-3 py-3 rounded-2xl text-left"
-                      style={{
-                        background: 'var(--bg-2)',
-                        border: '1px solid var(--line)',
-                      }}>
-                      <div className="flex items-center justify-center rounded-xl flex-shrink-0"
-                        style={{ width: 36, height: 36, background: `${s.sectorColor}18`, border: `1px solid ${s.sectorColor}30` }}>
-                        <span className="font-mono font-bold text-[10px]" style={{ color: s.sectorColor }}>
-                          {s.ticker.slice(0, 3)}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-bold text-[12px] truncate" style={{ color: 'var(--text-primary)' }}>{s.ticker}</div>
-                        <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{s.sector}</div>
-                      </div>
-                    </button>
-                  ))}
+
+                {/* Stock rows */}
+                <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+                  {cat.stocks.map((s, i) => {
+                    const isUp = s.change >= 0
+                    return (
+                      <button key={s.ticker}
+                        onClick={() => handleStockTap(s)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                        style={{
+                          background: 'var(--bg-2)',
+                          borderBottom: i < cat.stocks.length - 1 ? '1px solid var(--line)' : 'none',
+                        }}>
+
+                        {/* Rank */}
+                        <span className="font-mono text-[10px] w-4 flex-shrink-0 text-right"
+                          style={{ color: 'var(--text-faint)' }}>{i + 1}</span>
+
+                        {/* Icon */}
+                        <div className="flex items-center justify-center rounded-xl flex-shrink-0"
+                          style={{ width: 36, height: 36, background: `${s.sectorColor}14`, border: `1px solid ${s.sectorColor}28` }}>
+                          <span className="font-mono font-bold text-[9px]" style={{ color: s.sectorColor }}>
+                            {s.ticker.slice(0, 4)}
+                          </span>
+                        </div>
+
+                        {/* Name */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[13px]" style={{ color: 'var(--text-primary)' }}>{s.ticker}</span>
+                            {s.note && (
+                              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded"
+                                style={{ background: 'rgba(232,184,75,0.08)', color: 'var(--gold)', border: '1px solid rgba(232,184,75,0.15)' }}>
+                                {s.note}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{s.name}</div>
+                        </div>
+
+                        {/* Price + change */}
+                        <div className="text-right flex-shrink-0">
+                          <div className="font-mono font-bold text-[13px]" style={{ color: 'var(--text-primary)' }}>
+                            ${s.price.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="font-mono font-bold text-[11px]"
+                            style={{ color: isUp ? 'var(--green)' : 'var(--red)' }}>
+                            {isUp ? '▲' : '▼'} {Math.abs(s.change).toFixed(2)}%
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
-            )}
+            ))}
           </>
         )}
 
