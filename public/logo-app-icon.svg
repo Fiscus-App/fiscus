@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e1628"/>
+      <stop offset="100%" stop-color="#05081a"/>
+    </linearGradient>
+    <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f5cc5a"/>
+      <stop offset="100%" stop-color="#c8982e"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e8b84b" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#e8b84b" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- App icon background with rounded corners -->
+  <rect width="200" height="200" rx="44" fill="url(#bgGrad)"/>
+  <!-- Subtle border -->
+  <rect x="0.5" y="0.5" width="199" height="199" rx="43.5" fill="none"
+        stroke="#e8b84b" stroke-width="1" stroke-opacity="0.25"/>
+  <!-- Ambient glow from bottom -->
+  <ellipse cx="100" cy="180" rx="90" ry="40" fill="url(#glowGrad)"/>
+  <!-- Grid pattern (subtle) -->
+  <pattern id="grid" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.025)" stroke-width="0.5"/>
+  </pattern>
+  <rect width="200" height="200" rx="44" fill="url(#grid)"/>
+  <!-- 4 ascending bars — the soul of wealth creation -->
+  <rect x="28" y="126" width="24" height="48" rx="5" fill="url(#barGrad)" opacity="0.32"/>
+  <rect x="58" y="100" width="24" height="74" rx="5" fill="url(#barGrad)" opacity="0.55"/>
+  <rect x="88" y="70" width="24" height="104" rx="5" fill="url(#barGrad)" opacity="0.80"/>
+  <rect x="118" y="36" width="24" height="138" rx="5" fill="url(#barGrad)"/>
+  <!-- Trend line connecting tops -->
+  <polyline points="40,126 70,100 100,70 130,36"
+            stroke="#f5cc5a" stroke-width="1.5" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"
+            stroke-dasharray="4,3" opacity="0.55"/>
+  <!-- F letterform in negative space (top-right accent) -->
+  <text x="152" y="88" font-family="Georgia, serif" font-size="52" font-weight="700"
+        fill="rgba(232,184,75,0.12)">F</text>
+</svg>

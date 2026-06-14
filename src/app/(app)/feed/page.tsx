@@ -137,9 +137,9 @@ export default function FeedPage() {
   const [refreshing, setRefreshing] = useState(false)
   const intervalRef                 = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Full viewport height minus nav (58). Header is overlaid on top of video.
+  // Full viewport height minus nav (70). Header is overlaid on top of video.
   useEffect(() => {
-    const update = () => setCardHeight(window.innerHeight - 58)
+    const update = () => setCardHeight(window.innerHeight - 70)
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
@@ -207,28 +207,35 @@ export default function FeedPage() {
   return (
     <div className="relative h-full" style={{ background: '#07091a' }}>
 
-      {/* ── For You / Following tabs ──────────────────────────────────── */}
+      {/* ── Feed tabs ─────────────────────────────────────────────────── */}
       <div
-        className="absolute flex items-center justify-center gap-6 z-20"
-        style={{ top: 52, left: 0, right: 0 }}
+        className="absolute flex items-center justify-center gap-1 z-20"
+        style={{ top: 54, left: 0, right: 0, paddingLeft: 8, paddingRight: 8 }}
       >
         {TABS.map((label, i) => (
           <button
             key={label}
             onClick={() => setTab(i)}
-            className="font-sans font-bold text-[14px] pb-1 bg-transparent border-none cursor-pointer transition-all"
+            className="relative font-sans font-semibold text-[13px] px-3 py-1 rounded-full bg-transparent border-none cursor-pointer transition-all"
             style={{
-              color: tab === i ? 'white' : 'rgba(255,255,255,0.45)',
-              borderBottom: tab === i ? '2px solid white' : '2px solid transparent',
-              textShadow: tab === i ? '0 1px 8px rgba(0,0,0,0.9)' : 'none',
+              color: tab === i ? '#fff' : 'rgba(255,255,255,0.42)',
+              background: tab === i
+                ? 'rgba(232,184,75,0.14)'
+                : 'transparent',
+              border: tab === i
+                ? '1px solid rgba(232,184,75,0.28)'
+                : '1px solid transparent',
+              backdropFilter: tab === i ? 'blur(8px)' : 'none',
+              textShadow: '0 1px 8px rgba(0,0,0,0.7)',
+              transition: 'all 0.2s ease',
             }}
           >
             {label}
           </button>
         ))}
         {refreshing && (
-          <RefreshCw size={12} className="animate-spin absolute right-4"
-            style={{ color: 'rgba(255,255,255,0.4)' }} />
+          <RefreshCw size={11} className="animate-spin absolute right-4"
+            style={{ color: 'rgba(255,255,255,0.35)' }} />
         )}
       </div>
 

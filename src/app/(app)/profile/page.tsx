@@ -2,15 +2,15 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { useEffect, useState } from 'react'
-import { Bell, Shield, HelpCircle, LogOut, ChevronRight, Bookmark, Lightbulb, Eye, Settings, Pencil, Check, X } from 'lucide-react'
+import { Bell, Shield, HelpCircle, LogOut, ChevronRight, Bookmark, Lightbulb, Eye, Settings, Pencil, Check, X, TrendingUp } from 'lucide-react'
 
 interface Stats { saves: number; insightfuls: number; watches: number }
 
 const SETTINGS_ROWS = [
-  { label: 'Notifications',      sub: 'Manage alerts & briefings',   icon: Bell       },
-  { label: 'Preferences',        sub: 'Feed topics & sectors',       icon: Settings   },
-  { label: 'Privacy & Security', sub: 'Account security settings',   icon: Shield     },
-  { label: 'Help & Support',     sub: 'FAQs and contact',            icon: HelpCircle },
+  { label: 'Notifications',      sub: 'Alerts, briefings & updates',  icon: Bell       },
+  { label: 'Preferences',        sub: 'Feed topics, sectors & style', icon: Settings   },
+  { label: 'Privacy & Security', sub: 'Account and data settings',    icon: Shield     },
+  { label: 'Help & Support',     sub: 'FAQs, docs and contact',       icon: HelpCircle },
 ]
 
 const TIER_LABELS: Record<string, string> = {
@@ -29,7 +29,7 @@ export default function ProfilePage() {
 
   const name    = session?.user?.name  ?? 'Guest'
   const email   = session?.user?.email ?? ''
-  const tier    = (session?.user as any)?.tier ?? 'FREE'
+  const tier    = (session?.user as { tier?: string })?.tier ?? 'FREE'
   const initial = name.charAt(0).toUpperCase()
 
   useEffect(() => {
@@ -65,136 +65,191 @@ export default function ProfilePage() {
 
   return (
     <div className="h-full overflow-y-auto scroll-y" style={{ background: 'var(--bg)' }}>
-      <div className="px-4 py-6 space-y-5">
+      <div className="px-4 pb-8">
 
-        {/* Avatar + name */}
-        <div className="flex flex-col items-center gap-3 py-4">
+        {/* ── Hero section ──────────────────────────────────────────────── */}
+        <div
+          className="relative overflow-hidden rounded-b-3xl mb-5 pt-6 pb-8 px-4"
+          style={{
+            background: 'linear-gradient(180deg, rgba(232,184,75,0.08) 0%, rgba(232,184,75,0.02) 100%)',
+            borderBottom: '1px solid rgba(232,184,75,0.12)',
+          }}
+        >
+          {/* Ambient glow */}
           <div
-            className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold font-serif"
+            className="absolute pointer-events-none"
             style={{
-              background: 'var(--gold-a)',
-              border: '2px solid var(--gold-c)',
-              color: 'var(--gold)',
-              boxShadow: '0 0 30px rgba(212,168,67,0.15)',
+              top: -60, left: '50%', transform: 'translateX(-50%)',
+              width: 200, height: 200,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(232,184,75,0.12) 0%, transparent 70%)',
             }}
-          >
-            {initial}
-          </div>
+          />
 
-          <div className="text-center">
-            {editing ? (
-              <div className="flex items-center gap-2">
-                <input
-                  autoFocus
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveName()
-                    if (e.key === 'Escape') setEditing(false)
-                  }}
-                  className="font-serif text-[18px] font-medium text-center rounded-lg px-2 py-1 outline-none w-40"
-                  style={{ background: 'var(--bg-3)', border: '1px solid var(--gold-b)', color: 'var(--text-primary)' }}
-                />
-                <button
-                  onClick={handleSaveName}
-                  disabled={saving}
-                  className="w-7 h-7 rounded-full flex items-center justify-center"
-                  style={{ background: 'var(--gold)', color: '#07091a' }}
-                >
-                  <Check size={13} strokeWidth={3} />
-                </button>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="w-7 h-7 rounded-full flex items-center justify-center"
-                  style={{ background: 'var(--bg-3)', color: 'var(--text-muted)' }}
-                >
-                  <X size={13} strokeWidth={2.5} />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 justify-center">
-                <div className="font-serif text-[18px] font-medium">{name}</div>
-                <button
-                  onClick={() => { setNameInput(name); setEditing(true) }}
-                  className="w-6 h-6 rounded-full flex items-center justify-center"
-                  style={{ color: 'var(--text-muted)', background: 'var(--bg-3)' }}
-                >
-                  <Pencil size={11} strokeWidth={2} />
-                </button>
-              </div>
-            )}
-            {email && (
-              <div className="text-[12px] font-mono mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                {email}
-              </div>
-            )}
-          </div>
+          {/* Avatar */}
+          <div className="flex flex-col items-center gap-3 relative">
+            <div
+              className="flex items-center justify-center font-serif font-bold"
+              style={{
+                width: 80, height: 80, borderRadius: '50%',
+                fontSize: 32,
+                background: 'linear-gradient(145deg, rgba(232,184,75,0.16) 0%, rgba(232,184,75,0.06) 100%)',
+                border: '2px solid rgba(232,184,75,0.40)',
+                color: 'var(--gold)',
+                boxShadow: '0 0 32px rgba(232,184,75,0.18)',
+              }}
+            >
+              {initial}
+            </div>
 
-          <div
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest"
-            style={{ background: 'var(--gold)', color: '#07091a' }}
-          >
-            BETA ACCESS
+            {/* Name / edit */}
+            <div className="text-center">
+              {editing ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveName()
+                      if (e.key === 'Escape') setEditing(false)
+                    }}
+                    className="font-serif text-[18px] font-medium text-center rounded-lg px-2 py-1 outline-none w-40"
+                    style={{
+                      background: 'var(--bg-3)',
+                      border: '1px solid rgba(232,184,75,0.35)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                  <button
+                    onClick={handleSaveName}
+                    disabled={saving}
+                    className="flex items-center justify-center"
+                    style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--gold)', color: '#05081a' }}
+                  >
+                    <Check size={13} strokeWidth={3} />
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="flex items-center justify-center"
+                    style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--bg-3)', color: 'var(--text-muted)' }}
+                  >
+                    <X size={13} strokeWidth={2.5} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 justify-center">
+                  <span
+                    className="font-serif font-semibold"
+                    style={{ fontSize: 20, letterSpacing: '-0.02em' }}
+                  >
+                    {name}
+                  </span>
+                  <button
+                    onClick={() => { setNameInput(name); setEditing(true) }}
+                    className="flex items-center justify-center"
+                    style={{
+                      width: 22, height: 22, borderRadius: 6,
+                      color: 'var(--text-muted)', background: 'var(--bg-3)',
+                    }}
+                  >
+                    <Pencil size={10} strokeWidth={2} />
+                  </button>
+                </div>
+              )}
+
+              {email && (
+                <p className="text-[11px] font-mono mt-1" style={{ color: 'var(--text-muted)' }}>
+                  {email}
+                </p>
+              )}
+            </div>
+
+            {/* Beta badge */}
+            <div
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-[0.16em]"
+              style={{ background: 'var(--gold)', color: '#05081a' }}
+            >
+              <TrendingUp size={9} strokeWidth={3} />
+              BETA ACCESS
+            </div>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-2">
+        {/* ── Stats ─────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-3 gap-2 mb-4">
           {STATS.map(({ label, value, icon: Icon }) => (
             <div
               key={label}
-              className="rounded-2xl p-3 flex flex-col items-center gap-1.5"
+              className="rounded-2xl p-3.5 flex flex-col items-center gap-1.5"
               style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}
             >
-              <Icon size={16} strokeWidth={1.8} style={{ color: 'var(--gold)' }} />
-              <span className="font-mono font-semibold text-[17px]">{value}</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              <Icon size={15} strokeWidth={1.8} style={{ color: 'var(--gold)' }} />
+              <span className="font-mono font-bold text-[18px]">{value}</span>
+              <span
+                className="text-[9px] font-bold uppercase tracking-wider"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 {label}
               </span>
             </div>
           ))}
         </div>
 
-        {/* Plan */}
+        {/* ── Plan ──────────────────────────────────────────────────────── */}
         <div
-          className="rounded-2xl p-4"
+          className="rounded-2xl p-4 mb-4"
           style={{
-            background: 'linear-gradient(135deg, rgba(212,168,67,0.1) 0%, rgba(212,168,67,0.04) 100%)',
-            border: '1px solid var(--gold-b)',
+            background: 'linear-gradient(135deg, rgba(232,184,75,0.10) 0%, rgba(232,184,75,0.03) 100%)',
+            border: '1px solid rgba(232,184,75,0.22)',
           }}
         >
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-[10px] font-mono font-bold uppercase tracking-widest" style={{ color: 'var(--gold)' }}>
+              <div
+                className="text-[9px] font-mono font-bold uppercase tracking-[0.18em] mb-1"
+                style={{ color: 'var(--gold)' }}
+              >
                 Current Plan
               </div>
-              <div className="font-serif text-[16px] font-medium mt-0.5">{TIER_LABELS[tier] ?? 'Fiscus Beta'}</div>
+              <div className="font-serif font-semibold text-[16px]" style={{ letterSpacing: '-0.01em' }}>
+                {TIER_LABELS[tier] ?? 'Fiscus Beta'}
+              </div>
               <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                Full access · Free during beta
+                Full access · Free during beta period
               </div>
             </div>
-            <div
-              className="px-3 py-1.5 rounded-lg text-[11px] font-bold"
-              style={{ background: 'var(--gold)', color: '#07091a' }}
+
+            <button
+              className="px-3.5 py-1.5 rounded-xl text-[11px] font-bold"
+              style={{
+                background: 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)',
+                color: '#05081a',
+                boxShadow: '0 0 16px rgba(232,184,75,0.22)',
+              }}
             >
               Upgrade
-            </div>
+            </button>
           </div>
         </div>
 
-        {/* Settings rows */}
-        <div>
+        {/* ── Settings ──────────────────────────────────────────────────── */}
+        <div className="mb-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-[10px] font-bold uppercase tracking-widest font-mono" style={{ color: 'var(--text-muted)' }}>
+            <span
+              className="text-[9px] font-bold uppercase tracking-[0.18em] font-mono"
+              style={{ color: 'var(--text-muted)' }}
+            >
               Settings
             </span>
             <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
           </div>
+
           <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
             {SETTINGS_ROWS.map(({ label, sub, icon: Icon }, i) => (
               <button
                 key={label}
-                className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
                 style={{
                   background: 'var(--bg-2)',
                   borderBottom: i < SETTINGS_ROWS.length - 1 ? '1px solid var(--line)' : 'none',
@@ -202,32 +257,38 @@ export default function ProfilePage() {
                 }}
               >
                 <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'var(--bg-3)', border: '1px solid var(--line)' }}
+                  className="flex items-center justify-center flex-shrink-0"
+                  style={{
+                    width: 34, height: 34, borderRadius: 10,
+                    background: 'var(--bg-3)',
+                    border: '1px solid var(--line)',
+                  }}
                 >
-                  <Icon size={14} strokeWidth={2} style={{ color: 'var(--text-muted)' }} />
+                  <Icon size={14} strokeWidth={1.8} style={{ color: 'var(--text-secondary)' }} />
                 </div>
                 <div className="flex-1">
                   <div className="text-[13px] font-medium">{label}</div>
-                  <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{sub}</div>
+                  <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{sub}</div>
                 </div>
-                <ChevronRight size={14} strokeWidth={2} style={{ color: 'var(--text-muted)' }} />
+                <ChevronRight size={13} strokeWidth={2} style={{ color: 'var(--text-muted)' }} />
               </button>
             ))}
           </div>
         </div>
 
-        {/* Sign out */}
+        {/* ── Sign out ──────────────────────────────────────────────────── */}
         <button
           onClick={() => signOut({ callbackUrl: '/login' })}
           className="w-full py-3.5 rounded-2xl flex items-center justify-center gap-2 text-[13px] font-semibold"
-          style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--red)' }}
+          style={{
+            background: 'var(--bg-2)',
+            border: '1px solid var(--line)',
+            color: 'var(--red)',
+          }}
         >
-          <LogOut size={15} strokeWidth={2} />
+          <LogOut size={14} strokeWidth={2} />
           Sign Out
         </button>
-
-        <div style={{ height: 8 }} />
       </div>
     </div>
   )

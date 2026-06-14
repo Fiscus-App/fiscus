@@ -5,34 +5,39 @@
 /* ─── Fiscus Design System ────────────────────────────────────────── */
 :root {
   /* Backgrounds */
-  --bg: #07091a;
-  --bg-2: #0d1222;
-  --bg-3: #141c30;
-  --bg-4: #1a243d;
-  --bg-5: #222e4a;
+  --bg: #05081a;
+  --bg-2: #0a1020;
+  --bg-3: #111826;
+  --bg-4: #172034;
+  --bg-5: #1f2a42;
 
   /* Lines */
-  --line: rgba(255, 255, 255, 0.06);
-  --line-2: rgba(255, 255, 255, 0.12);
-  --line-3: rgba(255, 255, 255, 0.2);
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.13);
+  --line-3: rgba(255, 255, 255, 0.22);
 
   /* Text */
-  --text-primary: #eef2ff;
-  --text-secondary: #8899bb;
-  --text-muted: #4a5878;
-  --text-faint: #2a3450;
+  --text-primary: #f0f4ff;
+  --text-secondary: #8da0c0;
+  --text-muted: #4e6082;
+  --text-faint: #283348;
 
-  /* Brand */
-  --gold: #d4a843;
-  --gold-a: rgba(212, 168, 67, 0.08);
-  --gold-b: rgba(212, 168, 67, 0.2);
-  --gold-c: rgba(212, 168, 67, 0.35);
+  /* Brand Gold — warmer, more vibrant */
+  --gold: #e8b84b;
+  --gold-vivid: #f5cc5a;
+  --gold-a: rgba(232, 184, 75, 0.08);
+  --gold-b: rgba(232, 184, 75, 0.18);
+  --gold-c: rgba(232, 184, 75, 0.36);
+  --gold-d: rgba(232, 184, 75, 0.60);
+  --gradient-gold: linear-gradient(135deg, #c8982e 0%, #e8b84b 50%, #f5cc5a 100%);
 
   /* Market */
-  --green: #2ed494;
-  --green-a: rgba(46, 212, 148, 0.1);
-  --red: #ff5252;
-  --red-a: rgba(255, 82, 82, 0.1);
+  --green: #22d48a;
+  --green-a: rgba(34, 212, 138, 0.10);
+  --green-b: rgba(34, 212, 138, 0.22);
+  --red: #ff4f4f;
+  --red-a: rgba(255, 79, 79, 0.10);
+  --red-b: rgba(255, 79, 79, 0.22);
 
   /* Accent */
   --blue: #5b8af5;
@@ -43,6 +48,18 @@
   --orange-a: rgba(249, 115, 22, 0.1);
   --amber: #f59e0b;
   --amber-a: rgba(245, 158, 11, 0.1);
+
+  /* Glass / surface effects */
+  --glass-bg: rgba(10, 16, 32, 0.75);
+  --glass-bg-light: rgba(20, 28, 48, 0.70);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-border-gold: rgba(232, 184, 75, 0.14);
+
+  /* Glow shadows */
+  --glow-gold: 0 0 24px rgba(232, 184, 75, 0.28);
+  --glow-gold-sm: 0 0 14px rgba(232, 184, 75, 0.20);
+  --glow-green: 0 0 20px rgba(34, 212, 138, 0.32);
+  --glow-red: 0 0 20px rgba(255, 79, 79, 0.32);
 
   /* Typography */
   --font-serif: 'Playfair Display', Georgia, serif;
@@ -206,10 +223,44 @@ button:active {
   transition: transform 0.1s ease;
 }
 
+/* ─── Glass surface utility ───────────────────────────────────────── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-gold {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--glass-border-gold);
+}
+
+/* ─── Premium card ────────────────────────────────────────────────── */
+.card-premium {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.card-premium:active {
+  transform: scale(0.985);
+  border-color: var(--glass-border-gold);
+}
+
+/* ─── Gradient border ─────────────────────────────────────────────── */
+.border-gold-glow {
+  border-color: rgba(232, 184, 75, 0.35);
+  box-shadow: 0 0 0 1px rgba(232, 184, 75, 0.12) inset;
+}
+
 /* ─── Gold glow for active elements ──────────────────────────────── */
 @keyframes gold-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 168, 67, 0); }
-  50% { box-shadow: 0 0 0 4px rgba(212, 168, 67, 0.12); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 184, 75, 0); }
+  50% { box-shadow: 0 0 0 6px rgba(232, 184, 75, 0.10); }
 }
 
 .gold-pulse {

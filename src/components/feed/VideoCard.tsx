@@ -83,7 +83,7 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
   }
 
   return (
-    <div className="relative overflow-hidden select-none" style={{ height, background: '#07091a' }}>
+    <div className="relative overflow-hidden select-none" style={{ height, background: '#05081a' }}>
 
       {/* ══ FULL-SCREEN BACKGROUND ════════════════════════════════════════ */}
       <div className="absolute inset-0">
@@ -112,9 +112,14 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
           </div>
         )}
 
-        {/* Sector color accent glow */}
+        {/* Sector color accent glow — richer, more cinematic */}
         <div className="absolute inset-0 pointer-events-none" style={{
-          background: `radial-gradient(ellipse 80% 60% at 50% 40%, ${item.sectorColor}0d 0%, transparent 70%)`,
+          background: `radial-gradient(ellipse 90% 70% at 50% 35%, ${item.sectorColor}15 0%, transparent 65%)`,
+        }} />
+        {/* Bottom ambient warmth */}
+        <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{
+          height: '40%',
+          background: `radial-gradient(ellipse 100% 80% at 50% 100%, ${item.sectorColor}08 0%, transparent 70%)`,
         }} />
 
         {/* Centre financial display */}
@@ -152,13 +157,13 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
 
         {/* Top gradient — header fade */}
         <div className="absolute top-0 left-0 right-0 pointer-events-none" style={{
-          height: 120,
-          background: 'linear-gradient(180deg, rgba(7,9,26,0.9) 0%, transparent 100%)',
+          height: 130,
+          background: 'linear-gradient(180deg, rgba(5,8,26,0.92) 0%, rgba(5,8,26,0.5) 60%, transparent 100%)',
         }} />
         {/* Bottom gradient — text readability */}
         <div className="absolute bottom-0 left-0 right-0 pointer-events-none" style={{
-          height: '62%',
-          background: 'linear-gradient(0deg, rgba(7,9,26,1) 0%, rgba(7,9,26,0.92) 35%, rgba(7,9,26,0.6) 60%, transparent 100%)',
+          height: '65%',
+          background: 'linear-gradient(0deg, rgba(5,8,26,1) 0%, rgba(5,8,26,0.95) 30%, rgba(5,8,26,0.7) 55%, transparent 100%)',
         }} />
       </div>
 
@@ -196,12 +201,17 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
         {/* Avatar */}
         <div className="flex flex-col items-center">
           <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-[13px]"
-            style={{ background: 'var(--gold-a)', border: '2px solid var(--gold)', color: 'var(--gold)' }}>
+            style={{
+              background: 'rgba(232,184,75,0.12)',
+              border: '2px solid rgba(232,184,75,0.45)',
+              color: 'var(--gold)',
+              boxShadow: '0 0 14px rgba(232,184,75,0.18)',
+            }}>
             {item.ticker.slice(0, 2)}
           </div>
           <div className="w-5 h-5 rounded-full flex items-center justify-center -mt-2.5"
-            style={{ background: 'var(--gold)', border: '2px solid #07091a' }}>
-            <span style={{ fontSize: 11, color: '#07091a', fontWeight: 900, lineHeight: 1 }}>+</span>
+            style={{ background: 'var(--gold)', border: '2px solid #05081a' }}>
+            <span style={{ fontSize: 11, color: '#05081a', fontWeight: 900, lineHeight: 1 }}>+</span>
           </div>
         </div>
 
