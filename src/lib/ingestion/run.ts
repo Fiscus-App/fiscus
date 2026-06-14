@@ -90,6 +90,15 @@ async function main() {
           sourceId: article.sourceId,
         })
 
+        if ('rejected' in enriched) {
+          console.log(`  ✗ REJECTED: ${article.title.slice(0, 60)} — ${enriched.reason}`)
+          await db.article.update({
+            where: { id: article.id },
+            data: { summary: '__REJECTED__', topicTags: ['__rejected__'], relatedTickers: [] },
+          })
+          continue
+        }
+
         await db.article.update({
           where: { id: article.id },
           data: {

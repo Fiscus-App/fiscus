@@ -79,6 +79,11 @@ async function runIngestion(
 
       const enriched = await enrichArticle(raw)
 
+      if ('rejected' in enriched) {
+        console.log(`[Ingestion] REJECTED: ${enriched.title.slice(0, 60)} — ${enriched.reason}`)
+        continue
+      }
+
       await db.article.create({
         data: {
           sourceId: raw.sourceId,
