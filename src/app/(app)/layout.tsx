@@ -93,7 +93,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
 
           {/* Search */}
-          <Link href="/feed?search=1"
+          <Link href="/search"
             className="flex items-center justify-center"
             style={{
               width: 34, height: 34, borderRadius: 10,
