@@ -42,11 +42,19 @@ interface Article {
   sector:      string | null
 }
 
+interface LiveData {
+  price:     number | null
+  change:    number | null
+  changeAbs: number | null
+  prevClose: number | null
+  chart:     number[]
+  isLive:    boolean
+}
+
 interface AssetData {
-  profile:     AssetProfile
-  chart:       number[]
-  chartIsReal: boolean
-  articles:    Article[]
+  profile:      AssetProfile
+  yahooSymbol:  string | null
+  articles:     Article[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -111,6 +119,7 @@ export default function AssetPage() {
   const { ticker } = useParams<{ ticker: string }>()
   const router     = useRouter()
   const [data, setData]       = useState<AssetData | null>(null)
+  const [live, setLive]       = useState<LiveData | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab]         = useState<'1M'|'3M'|'6M'|'YTD'>('YTD')
 
@@ -118,7 +127,17 @@ export default function AssetPage() {
     setLoading(true)
     try {
       const res = await fetch(`/api/asset/${ticker}`)
-      if (res.ok) setData(await res.json())
+      if (!res.ok) return
+      const json: AssetData = await res.json()
+      setData(json)
+
+      // Fetch live price + chart from Edge Runtime (Yahoo Finance works there)
+      if (json.yahooSymbol) {
+        fetch(`/api/market/live?symbol=${encodeURIComponent(json.yahooSymbol)}`)
+          .then(r => r.ok ? r.json() : null)
+          .then((ld: LiveData | null) => { if (ld) setLive(ld) })
+          .catch(() => {})
+      }
     } finally {
       setLoading(false)
     }
@@ -129,12 +148,13 @@ export default function AssetPage() {
   // ── Slice chart by tab ─────────────────────────────────────────────────────
   const chartPoints = (): ChartPoint[] => {
     if (!data) return []
-    const all     = data.chart
+    const all     = chart  // live.chart if available, else empty
+    if (!all.length) return []
     const len     = all.length
     const cutFrac = tab === '1M' ? 0.92 : tab === '3M' ? 0.77 : tab === '6M' ? 0.5 : 0
     const cut     = Math.floor(len * cutFrac)
     const slice   = all.slice(cut)
-    return slice.map((price, i) => ({ week: cut + i + 1, price }))
+    return slice.map((p, i) => ({ week: cut + i + 1, price: p }))
   }
 
   const pts = chartPoints()
@@ -163,8 +183,14 @@ export default function AssetPage() {
     </div>
   )
 
-  const { profile, articles, chartIsReal } = data
-  const up = profile.change >= 0
+  const { profile, articles } = data
+  // Merge live data over ghost profile values
+  const price     = live?.price     ?? profile.price
+  const change    = live?.change    ?? profile.change
+  const changeAbs = live?.changeAbs ?? profile.changeAbs
+  const isLive    = live?.isLive    ?? false
+  const chart     = live?.chart?.length ? live.chart : []
+  const up        = change >= 0
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg-1)', paddingBottom: 90 }}>
@@ -213,13 +239,13 @@ export default function AssetPage() {
 
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 8 }}>
           <span style={{ fontSize: 42, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1 }}>
-            {formatPrice(profile.price, profile.currency, profile.type)}
+            {formatPrice(price, profile.currency, profile.type)}
           </span>
           <span style={{
             fontSize: 15, fontWeight: 700, paddingBottom: 4,
             color: up ? '#2ed494' : '#ff4f4f',
           }}>
-            {up ? '▲' : '▼'} {Math.abs(profile.change).toFixed(2)}%
+            {up ? '▲' : '▼'} {Math.abs(change).toFixed(2)}%
           </span>
         </div>
 
@@ -227,10 +253,9 @@ export default function AssetPage() {
           <span style={{
             fontSize: 13, color: up ? '#2ed494' : '#ff4f4f', fontWeight: 600,
           }}>
-            {up ? '+' : ''}{profile.changeAbs >= 0 && profile.change < 0 ? '-' : ''}
-            {formatPrice(Math.abs(profile.changeAbs), profile.currency, profile.type)} today
+            {up ? '+' : ''}{formatPrice(Math.abs(changeAbs), profile.currency, profile.type)} today
           </span>
-          {!profile.isLive && (
+          {!isLive && (
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 6px',
               borderRadius: 4, background: '#e8b84b20', color: '#e8b84b',
@@ -239,7 +264,7 @@ export default function AssetPage() {
               SIMULATED
             </span>
           )}
-          {profile.isLive && (
+          {isLive && (
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 6px',
               borderRadius: 4, background: '#2ed49420', color: '#2ed494',

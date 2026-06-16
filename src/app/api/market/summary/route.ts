@@ -1,135 +1,58 @@
 /**
  * /api/market/summary — Node.js Lambda
  *
- * Returns indices, FX, commodities, and top ASX movers via Yahoo Finance.
- * No API key required. Falls back to Frankfurter ECB for FX if Yahoo is down.
+ * Returns FX rates (Frankfurter ECB) + commodity/index stubs.
+ * Stocks and live indices come from /api/market/stocks (Edge Runtime)
+ * because Yahoo Finance blocks Vercel Lambda (AWS) IPs.
+ *
+ * Sources:
+ *   • Frankfurter — ECB reference FX (AUD/USD, AUD/CNY, AUD/JPY, AUD/EUR)
  */
 
 import { NextResponse } from 'next/server'
-import { fetchMarketSummary, MARKET_SYMBOLS } from '@/lib/market/yahoo'
 import { fetchAUDRates } from '@/lib/market/frankfurter'
 
-const INDEX_SYMBOLS: Record<string, string> = {
-  '^AXJO': 'ASX 200',
-  '^GSPC': 'S&P 500',
-  '^N225': 'Nikkei',
-  '^FTSE': 'FTSE 100',
-}
-
-const FX_SYMBOLS: Record<string, string> = {
-  'AUDUSD=X': 'AUD/USD',
-  'AUDCNY=X': 'AUD/CNY',
-  'AUDJPY=X': 'AUD/JPY',
-  'AUDEUR=X': 'AUD/EUR',
-}
-
-const COMMODITY_SYMBOLS: Record<string, { name: string; unit: string }> = {
-  'GC=F': { name: 'Gold',    unit: '/oz'  },
-  'CL=F': { name: 'WTI Oil', unit: '/bbl' },
-  'HG=F': { name: 'Copper',  unit: '/lb'  },
-  'SI=F': { name: 'Silver',  unit: '/oz'  },
-}
-
-const ASX_NAMES: Record<string, string> = {
-  'CBA.AX': 'Commonwealth Bank',
-  'BHP.AX': 'BHP Group',
-  'WDS.AX': 'Woodside Energy',
-  'RIO.AX': 'Rio Tinto',
-  'FMG.AX': 'Fortescue',
-  'CSL.AX': 'CSL Limited',
-  'NAB.AX': 'Natl Australia Bank',
-  'ANZ.AX': 'ANZ Group',
-}
-
 export async function GET() {
-  const [quotes, fxBackup] = await Promise.all([
-    fetchMarketSummary().catch(() => ({} as Record<string, import('@/lib/market/yahoo').Quote>)),
-    fetchAUDRates().catch(() => null),
-  ])
+  const fxData = await fetchAUDRates().catch(() => null)
 
-  // ── Indices ──────────────────────────────────────────────────────────────
-  const indices = MARKET_SYMBOLS.indices.map((sym) => {
-    const q = quotes[sym]
-    return {
-      name:      INDEX_SYMBOLS[sym] ?? sym,
-      value:     q?.price     ?? null,
-      change:    q?.change    ?? null,
-      changeAbs: q?.changeAbs ?? null,
-    }
-  })
+  const rates = fxData?.rates ?? {}
 
-  // ── FX (Yahoo → Frankfurter ECB fallback) ────────────────────────────────
-  const fbRates: Record<string, number> = {}
-  if (fxBackup?.rates) {
-    if (fxBackup.rates.USD) fbRates['AUD/USD'] = fxBackup.rates.USD
-    if (fxBackup.rates.CNY) fbRates['AUD/CNY'] = fxBackup.rates.CNY
-    if (fxBackup.rates.JPY) fbRates['AUD/JPY'] = fxBackup.rates.JPY
-    if (fxBackup.rates.EUR) fbRates['AUD/EUR'] = fxBackup.rates.EUR
-  }
+  const fx = [
+    { pair: 'AUD/USD', value: rates.USD ?? null, change: null, source: rates.USD ? 'ecb' : null },
+    { pair: 'AUD/CNY', value: rates.CNY ?? null, change: null, source: rates.CNY ? 'ecb' : null },
+    { pair: 'AUD/JPY', value: rates.JPY ?? null, change: null, source: rates.JPY ? 'ecb' : null },
+    { pair: 'AUD/EUR', value: rates.EUR ?? null, change: null, source: rates.EUR ? 'ecb' : null },
+  ]
 
-  const fx = MARKET_SYMBOLS.fx.map((sym) => {
-    const q     = quotes[sym]
-    const label = FX_SYMBOLS[sym] ?? sym
-    const live  = q?.price ?? null
-    const ecb   = fbRates[label] ?? null
-    return {
-      pair:   label,
-      value:  live ?? ecb,
-      change: q?.change ?? null,
-      source: live !== null ? 'live' : ecb !== null ? 'ecb' : null,
-    }
-  })
+  // Commodity and index stubs — populated client-side from /api/market/live
+  const commodities = [
+    { name: 'Gold',    unit: '/oz',  value: null, change: null },
+    { name: 'WTI Oil', unit: '/bbl', value: null, change: null },
+    { name: 'Copper',  unit: '/lb',  value: null, change: null },
+    { name: 'Silver',  unit: '/oz',  value: null, change: null },
+  ]
 
-  // ── Commodities ──────────────────────────────────────────────────────────
-  const commodities = MARKET_SYMBOLS.commodities.map((sym) => {
-    const q   = quotes[sym]
-    const def = COMMODITY_SYMBOLS[sym] ?? { name: sym, unit: '' }
-    return {
-      name:   def.name,
-      unit:   def.unit,
-      value:  q?.price  ?? null,
-      change: q?.change ?? null,
-    }
-  })
-
-  // ── ASX top movers ────────────────────────────────────────────────────────
-  const topMovers = MARKET_SYMBOLS.topAsx.map((sym) => {
-    const q      = quotes[sym]
-    const ticker = sym.replace('.AX', '')
-    return {
-      ticker,
-      name:      ASX_NAMES[sym] ?? ticker,
-      price:     q?.price     ?? null,
-      change:    q?.change    ?? null,
-      changeAbs: q?.changeAbs ?? null,
-    }
-  }).sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
-
-  // ── ASX 200 ───────────────────────────────────────────────────────────────
-  const axjoQ = quotes['^AXJO']
-  const asx = axjoQ
-    ? { price: axjoQ.price, change: axjoQ.change, changeAbs: axjoQ.changeAbs }
-    : null
-
-  const hasAnyLive = Object.keys(quotes).length > 0
+  const indices = [
+    { name: 'ASX 200',  value: null, change: null, changeAbs: null },
+    { name: 'S&P 500',  value: null, change: null, changeAbs: null },
+    { name: 'Nikkei',   value: null, change: null, changeAbs: null },
+    { name: 'FTSE 100', value: null, change: null, changeAbs: null },
+  ]
 
   return NextResponse.json(
     {
-      indices,
-      commodities,
       fx,
-      topMovers,
-      asx,
+      commodities,
+      indices,
+      topMovers: [],
+      asx: null,
       meta: {
-        fetchedAt:          new Date().toISOString(),
-        hasAnyLive,
-        hasLiveStocks:      topMovers.some(m => m.price !== null),
-        hasLiveFX:          fx.some(f => f.value !== null),
-        hasLiveIndices:     indices.some(i => i.value !== null),
-        hasLiveCommodities: commodities.some(c => c.value !== null),
-        dataSource:         hasAnyLive ? 'yahoo' : 'none',
+        fetchedAt:  new Date().toISOString(),
+        hasLiveFX:  fx.some(f => f.value !== null),
+        dataSource: 'frankfurter',
+        note:       'Stocks/indices via /api/market/stocks (Edge). Commodities/FX via /api/market/live (Edge).',
       },
     },
-    { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' } }
+    { headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=300' } }
   )
 }

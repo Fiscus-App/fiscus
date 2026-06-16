@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
-import { fetchBySymbol, fetchHistoricalChart } from '@/lib/market/yahoo'
 
 // ── Asset profile catalogue ───────────────────────────────────────────────────
 
@@ -343,31 +342,11 @@ export async function GET(
   const ticker  = params.ticker.toUpperCase()
   const profile = PROFILES[ticker] ?? buildFallback(ticker)
 
-  // ── Fetch real price + chart from Yahoo Finance in parallel ───────────────
-  const yahooSym = assetToYahoo(ticker, profile)
+  // yahooSymbol is passed to the client so it can call /api/market/live
+  // directly from Edge Runtime (Yahoo blocks Lambda/AWS IPs)
+  const yahooSymbol = assetToYahoo(ticker, profile)
 
-  const [liveQuote, historicalPoints] = await Promise.all([
-    yahooSym ? fetchBySymbol(yahooSym).catch(() => null) : Promise.resolve(null),
-    yahooSym ? fetchHistoricalChart(yahooSym, '1y').catch(() => []) : Promise.resolve([]),
-  ])
-
-  // Merge live quote into profile (override ghost price if real data available)
-  const liveProfile = liveQuote
-    ? {
-        ...profile,
-        price:     liveQuote.price,
-        change:    liveQuote.change,
-        changeAbs: liveQuote.changeAbs,
-        isLive:    true,
-      }
-    : { ...profile, isLive: false }
-
-  // Build chart array — real closes if available, ghost fallback otherwise
-  const chart: number[] = historicalPoints.length > 0
-    ? historicalPoints.map(p => p.close)
-    : ghostChart(liveProfile.price, profile.type === 'COMMODITY' ? 0.022 : 0.018, 0.09)
-
-  // ── Articles from DB ───────────────────────────────────────────────────────
+  // ── Articles from DB (Lambda is fine for Neon DB) ─────────────────────────
   let articles: {
     id: string
     title: string
@@ -401,9 +380,8 @@ export async function GET(
 
   return NextResponse.json(
     {
-      profile: liveProfile,
-      chart,
-      chartIsReal: historicalPoints.length > 0,
+      profile,
+      yahooSymbol,  // client uses this to call /api/market/live?symbol=...
       articles: articles.map(a => ({
         id:          a.id,
         title:       a.title,
@@ -413,6 +391,6 @@ export async function GET(
         sector:      a.sector,
       })),
     },
-    { headers: { 'Cache-Control': 'public, s-maxage=180, stale-while-revalidate=60' } }
+    { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' } }
   )
 }
