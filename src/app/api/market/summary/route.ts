@@ -1,58 +1,72 @@
 /**
  * /api/market/summary — Node.js Lambda
- *
- * Returns FX rates (Frankfurter ECB) + commodity/index stubs.
- * Stocks and live indices come from /api/market/stocks (Edge Runtime)
- * because Yahoo Finance blocks Vercel Lambda (AWS) IPs.
- *
- * Sources:
- *   • Frankfurter — ECB reference FX (AUD/USD, AUD/CNY, AUD/JPY, AUD/EUR)
+ * Uses Twelve Data — a proper REST API that works from Vercel Lambda.
  */
 
 import { NextResponse } from 'next/server'
-import { fetchAUDRates } from '@/lib/market/frankfurter'
+import { fetchMarketSummary } from '@/lib/market/twelvedata'
+import { fetchAUDRates }      from '@/lib/market/frankfurter'
 
 export async function GET() {
-  const fxData = await fetchAUDRates().catch(() => null)
+  const [td, fxBackup] = await Promise.all([
+    fetchMarketSummary(),
+    fetchAUDRates().catch(() => null),
+  ])
 
-  const rates = fxData?.rates ?? {}
+  // FX: Twelve Data primary, Frankfurter ECB backup
+  const fbRates: Record<string, number> = {}
+  if (fxBackup?.rates) {
+    if (fxBackup.rates.USD) fbRates['AUD/USD'] = fxBackup.rates.USD
+    if (fxBackup.rates.CNY) fbRates['AUD/CNY'] = fxBackup.rates.CNY
+    if (fxBackup.rates.JPY) fbRates['AUD/JPY'] = fxBackup.rates.JPY
+    if (fxBackup.rates.EUR) fbRates['AUD/EUR'] = fxBackup.rates.EUR
+  }
 
-  const fx = [
-    { pair: 'AUD/USD', value: rates.USD ?? null, change: null, source: rates.USD ? 'ecb' : null },
-    { pair: 'AUD/CNY', value: rates.CNY ?? null, change: null, source: rates.CNY ? 'ecb' : null },
-    { pair: 'AUD/JPY', value: rates.JPY ?? null, change: null, source: rates.JPY ? 'ecb' : null },
-    { pair: 'AUD/EUR', value: rates.EUR ?? null, change: null, source: rates.EUR ? 'ecb' : null },
-  ]
+  const fx = td.fx.map(f => {
+    const live   = f.quote?.price  ?? null
+    const backup = fbRates[f.pair] ?? null
+    return {
+      pair:   f.pair,
+      value:  live ?? backup,
+      change: f.quote?.change ?? null,
+      source: live !== null ? 'live' : backup !== null ? 'ecb' : null,
+    }
+  })
 
-  // Commodity and index stubs — populated client-side from /api/market/live
-  const commodities = [
-    { name: 'Gold',    unit: '/oz',  value: null, change: null },
-    { name: 'WTI Oil', unit: '/bbl', value: null, change: null },
-    { name: 'Copper',  unit: '/lb',  value: null, change: null },
-    { name: 'Silver',  unit: '/oz',  value: null, change: null },
-  ]
+  const commodities = td.commodities.map(c => ({
+    name:   c.name,
+    unit:   c.unit,
+    value:  c.quote?.price  ?? null,
+    change: c.quote?.change ?? null,
+  }))
 
-  const indices = [
-    { name: 'ASX 200',  value: null, change: null, changeAbs: null },
-    { name: 'S&P 500',  value: null, change: null, changeAbs: null },
-    { name: 'Nikkei',   value: null, change: null, changeAbs: null },
-    { name: 'FTSE 100', value: null, change: null, changeAbs: null },
-  ]
+  const indices = td.indices.map(i => ({
+    name:      i.name,
+    value:     i.quote?.price     ?? null,
+    change:    i.quote?.change    ?? null,
+    changeAbs: i.quote?.changeAbs ?? null,
+  }))
+
+  const topMovers = td.topMovers.map(m => ({
+    ticker:    m.ticker,
+    name:      m.name,
+    price:     m.quote?.price     ?? null,
+    change:    m.quote?.change    ?? null,
+    changeAbs: m.quote?.changeAbs ?? null,
+  }))
+
+  const asx = td.asx
+    ? { price: td.asx.price, change: td.asx.change, changeAbs: td.asx.changeAbs }
+    : null
+
+  const hasAnyLive = topMovers.some(m => m.price !== null) || fx.some(f => f.value !== null)
 
   return NextResponse.json(
-    {
-      fx,
-      commodities,
-      indices,
-      topMovers: [],
-      asx: null,
-      meta: {
-        fetchedAt:  new Date().toISOString(),
-        hasLiveFX:  fx.some(f => f.value !== null),
-        dataSource: 'frankfurter',
-        note:       'Stocks/indices via /api/market/stocks (Edge). Commodities/FX via /api/market/live (Edge).',
-      },
-    },
-    { headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=300' } }
+    { indices, commodities, fx, topMovers, asx, meta: {
+      fetchedAt: new Date().toISOString(),
+      hasAnyLive,
+      dataSource: hasAnyLive ? 'twelvedata' : 'none',
+    }},
+    { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' } }
   )
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
+import { fetchSingleQuote, fetchTimeSeries } from '@/lib/market/twelvedata'
 
 // ── Asset profile catalogue ───────────────────────────────────────────────────
 
@@ -39,40 +40,34 @@ function ghostChart(basePrice: number, volatility = 0.015, trend = 0.08): number
   return points
 }
 
-// Map our ticker to the correct Yahoo Finance symbol.
-// Uses the profile's exchange to distinguish ASX vs US/global stocks.
-function assetToYahoo(ticker: string, profile: AssetProfile): string | null {
-  // Explicit overrides for non-stock assets
+// Map our ticker to the correct Twelve Data symbol.
+function assetToTD(ticker: string, profile: AssetProfile): string | null {
   const overrides: Record<string, string | null> = {
-    GOLD:   'GC=F',
-    OIL:    'CL=F',
-    SILVER: 'SI=F',
-    COPPER: 'HG=F',
-    AUD:    'AUDUSD=X',
-    XJO:    '^AXJO',
-    SPX:    '^GSPC',
-    NDX:    '^IXIC',
-    DJI:    '^DJI',
-    RBA:    null,   // interest rate — no market symbol
+    // Commodities
+    GOLD:   'XAU/USD',
+    SILVER: 'XAG/USD',
+    OIL:    'WTI/USD',
+    COPPER: 'XCU/USD',
+    // FX
+    AUD:    'AUD/USD',
+    // Indices
+    XJO:    'AXJO',
+    SPX:    'SPX',
+    NDX:    'NDX',
+    DJI:    'DJI',
+    // No market price
+    RBA:    null,
   }
   if (ticker in overrides) return overrides[ticker]
 
   if (profile.type === 'STOCK') {
     const exchange = profile.exchange?.toUpperCase() ?? ''
-    // ASX-listed stocks need the .AX suffix
-    if (exchange === 'ASX') return `${ticker}.AX`
-    // US stocks (NASDAQ, NYSE, etc.) use ticker as-is
-    if (['NASDAQ', 'NYSE', 'NYSEARCA'].includes(exchange)) return ticker
-    // Default: try as-is (will work for most US stocks)
+    if (exchange === 'ASX') return `${ticker}:ASX`
+    // US stocks use ticker as-is
     return ticker
   }
 
-  if (profile.type === 'INDEX') {
-    // Indices without an explicit override — try as-is
-    return ticker
-  }
-
-  if (profile.type === 'FX') return `${ticker}=X`
+  if (profile.type === 'FX') return `${ticker}/USD`
 
   return null
 }
@@ -339,14 +334,25 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { ticker: string } }
 ) {
-  const ticker  = params.ticker.toUpperCase()
-  const profile = PROFILES[ticker] ?? buildFallback(ticker)
+  const ticker   = params.ticker.toUpperCase()
+  const profile  = PROFILES[ticker] ?? buildFallback(ticker)
+  const tdSymbol = assetToTD(ticker, profile)
 
-  // yahooSymbol is passed to the client so it can call /api/market/live
-  // directly from Edge Runtime (Yahoo blocks Lambda/AWS IPs)
-  const yahooSymbol = assetToYahoo(ticker, profile)
+  // ── Fetch live price + chart from Twelve Data (works from Lambda) ──────────
+  const [liveQuote, chartData] = await Promise.all([
+    tdSymbol ? fetchSingleQuote(tdSymbol, ticker).catch(() => null) : Promise.resolve(null),
+    tdSymbol ? fetchTimeSeries(tdSymbol).catch(() => [])            : Promise.resolve([]),
+  ])
 
-  // ── Articles from DB (Lambda is fine for Neon DB) ─────────────────────────
+  const liveProfile = liveQuote
+    ? { ...profile, price: liveQuote.price, change: liveQuote.change, changeAbs: liveQuote.changeAbs, isLive: true }
+    : { ...profile, isLive: false }
+
+  const chart = chartData.length > 0
+    ? chartData
+    : ghostChart(liveProfile.price, profile.type === 'COMMODITY' ? 0.022 : 0.018, 0.09)
+
+  // ── Articles from DB ───────────────────────────────────────────────────────
   let articles: {
     id: string
     title: string
@@ -380,8 +386,9 @@ export async function GET(
 
   return NextResponse.json(
     {
-      profile,
-      yahooSymbol,  // client uses this to call /api/market/live?symbol=...
+      profile:     liveProfile,
+      chart,
+      chartIsReal: chartData.length > 0,
       articles: articles.map(a => ({
         id:          a.id,
         title:       a.title,
@@ -391,6 +398,6 @@ export async function GET(
         sector:      a.sector,
       })),
     },
-    { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' } }
+    { headers: { 'Cache-Control': 'public, s-maxage=180, stale-while-revalidate=60' } }
   )
 }

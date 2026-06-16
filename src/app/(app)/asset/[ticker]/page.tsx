@@ -42,19 +42,11 @@ interface Article {
   sector:      string | null
 }
 
-interface LiveData {
-  price:     number | null
-  change:    number | null
-  changeAbs: number | null
-  prevClose: number | null
-  chart:     number[]
-  isLive:    boolean
-}
-
 interface AssetData {
-  profile:      AssetProfile
-  yahooSymbol:  string | null
-  articles:     Article[]
+  profile:     AssetProfile
+  chart:       number[]
+  chartIsReal: boolean
+  articles:    Article[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -119,7 +111,6 @@ export default function AssetPage() {
   const { ticker } = useParams<{ ticker: string }>()
   const router     = useRouter()
   const [data, setData]       = useState<AssetData | null>(null)
-  const [live, setLive]       = useState<LiveData | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab]         = useState<'1M'|'3M'|'6M'|'YTD'>('YTD')
 
@@ -127,17 +118,7 @@ export default function AssetPage() {
     setLoading(true)
     try {
       const res = await fetch(`/api/asset/${ticker}`)
-      if (!res.ok) return
-      const json: AssetData = await res.json()
-      setData(json)
-
-      // Fetch live price + chart from Edge Runtime (Yahoo Finance works there)
-      if (json.yahooSymbol) {
-        fetch(`/api/market/live?symbol=${encodeURIComponent(json.yahooSymbol)}`)
-          .then(r => r.ok ? r.json() : null)
-          .then((ld: LiveData | null) => { if (ld) setLive(ld) })
-          .catch(() => {})
-      }
+      if (res.ok) setData(await res.json())
     } finally {
       setLoading(false)
     }
@@ -183,13 +164,11 @@ export default function AssetPage() {
     </div>
   )
 
-  const { profile, articles } = data
-  // Merge live data over ghost profile values
-  const price     = live?.price     ?? profile.price
-  const change    = live?.change    ?? profile.change
-  const changeAbs = live?.changeAbs ?? profile.changeAbs
-  const isLive    = live?.isLive    ?? false
-  const chart     = live?.chart?.length ? live.chart : []
+  const { profile, chart, articles } = data
+  const price     = profile.price
+  const change    = profile.change
+  const changeAbs = profile.changeAbs
+  const isLive    = profile.isLive ?? false
   const up        = change >= 0
 
   return (

@@ -210,6 +210,56 @@ export async function fetchMarketSummary(): Promise<MarketSummaryData> {
   return result
 }
 
+// ─── fetchSingleQuote — for asset page (any TD symbol) ───────────────────────
+
+export async function fetchSingleQuote(tdSymbol: string, displayTicker: string): Promise<TDQuote | null> {
+  const cacheKey = `single_${tdSymbol}`
+  const cached   = getCached<TDQuote>(cacheKey)
+  if (cached) return cached
+
+  const raw = await tdFetch([tdSymbol])
+  const r   = raw[tdSymbol]
+  if (!r) return null
+  const q = parseQuote(r, displayTicker)
+  if (q) setCached(cacheKey, q, TTL_QUOTE)
+  return q
+}
+
+// ─── fetchTimeSeries — 1-year weekly closes for charting ─────────────────────
+
+export async function fetchTimeSeries(tdSymbol: string): Promise<number[]> {
+  const cacheKey = `ts_${tdSymbol}`
+  const cached   = getCached<number[]>(cacheKey)
+  if (cached) return cached
+
+  const key = process.env.TWELVE_DATA_API_KEY
+  if (!key) return []
+
+  try {
+    const url = `${BASE_URL}/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=1week&outputsize=52&apikey=${key}`
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) return []
+
+    const json = await res.json() as {
+      status?: string
+      values?: { datetime: string; close: string }[]
+    }
+    if (json.status === 'error' || !json.values?.length) return []
+
+    // Values come newest-first — reverse to chronological order
+    const closes = json.values
+      .slice()
+      .reverse()
+      .map(v => parseFloat(v.close))
+      .filter(n => !isNaN(n))
+
+    setCached(cacheKey, closes, 30 * 60 * 1000) // 30 min cache
+    return closes
+  } catch {
+    return []
+  }
+}
+
 // ─── fetchQuotes (for feed card prices) ──────────────────────────────────────
 
 export async function fetchQuotesByTicker(tickers: string[]): Promise<Map<string, TDQuote>> {

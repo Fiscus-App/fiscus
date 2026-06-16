@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchQuotes } from '@/lib/market/yahoo'
+import { fetchQuotesByTicker } from '@/lib/market/twelvedata'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const raw     = searchParams.get('tickers') ?? ''
-  const tickers = raw.split(',').map((t) => t.trim()).filter(Boolean)
+  const tickers = raw.split(',').map(t => t.trim()).filter(Boolean)
 
   if (tickers.length === 0) {
-    return NextResponse.json({ error: 'Provide ?tickers=CBA,BHP,WDS' }, { status: 400 })
+    return NextResponse.json({ error: 'Provide ?tickers=CBA,BHP' }, { status: 400 })
   }
 
-  const quotesMap = await fetchQuotes(tickers).catch(() => new Map())
+  const quotesMap = await fetchQuotesByTicker(tickers).catch(() => new Map())
   const result: Record<string, { price: number; change: number; changeAbs: number }> = {}
 
   for (const [ticker, q] of Array.from(quotesMap.entries())) {
