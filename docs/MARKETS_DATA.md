@@ -45,6 +45,11 @@ the Edge route / lib. It is never sent to the browser — the client only receiv
 ## Rate-limit budget (free tier: 8 credits/min, 800/day)
 
 - One uncached summary refresh = **7 Twelve Data credits** (4 FX + 3 commodities).
+- **All other surfaces use Stooq, not Twelve Data, so they spend ZERO credits:**
+  feed-card prices, `/api/market/quotes`, and ASX/index asset pages. (Earlier these
+  sent `:ASX`/index symbols to TD, which fail on the free tier but still bill a
+  credit each — that was draining the whole 800/day budget and rate-limiting the
+  app. A guard in `twelvedata.ts` now refuses those symbols outright.)
 - The route sets `Cache-Control: s-maxage=300` → at most one upstream refresh per
   **5 minutes** regardless of how many users load the page. The page also
   auto-refreshes every 5 min and on manual refresh.

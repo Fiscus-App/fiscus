@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
 import { dbArticleToFeedItem } from '@/lib/feed/transform'
-import { fetchQuotesByTicker } from '@/lib/market/twelvedata'
+import { fetchStooqQuotesByTicker } from '@/lib/market/stooq'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -53,14 +53,18 @@ export async function GET(req: NextRequest) {
       db.article.count({ where }),
     ])
 
-    // Batch-fetch real prices for all tickers mentioned in these articles
-    const allTickers = Array.from(new Set(articles.flatMap((a) => a.relatedTickers)))
-    const quotes = await fetchQuotesByTicker(allTickers)
+    // Real prices for the PRIMARY ticker shown on each card, from Stooq (free,
+    // no key, no credit limit). Only fetch what's actually displayed — not every
+    // ticker mentioned — which also keeps Stooq request volume low.
+    const primaryTickers = Array.from(new Set(
+      articles.map((a) => a.relatedTickers[0]).filter((t): t is string => !!t)
+    ))
+    const quotes = await fetchStooqQuotesByTicker(primaryTickers)
 
     const feedItems = articles.map((a) => {
       const item   = dbArticleToFeedItem(a)
       const ticker = a.relatedTickers[0]
-      const quote  = ticker ? quotes.get(ticker) : undefined
+      const quote  = ticker ? quotes.get(ticker.toUpperCase()) : undefined
       if (quote) {
         item.price  = quote.price
         item.change = quote.change

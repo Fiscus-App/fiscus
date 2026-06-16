@@ -110,6 +110,17 @@ async function run() {
   r = await fetchTwelveDataQuotes([])
   check('empty symbol list → "ok", 0 quotes', r.status === 'ok' && r.quotes.size === 0)
 
+  // 12b) Free-tier guard: ASX/index symbols are skipped WITHOUT any network call
+  //      (fetch is set to throw — if the guard let them through, status="error")
+  nextResponse = { throw: true }
+  r = await fetchTwelveDataQuotes(['CBA:ASX', 'AXJO', 'SPX'])
+  check('blocked ASX/index symbols skipped — no fetch, no credits spent', r.status === 'ok' && r.quotes.size === 0)
+
+  // 12c) Mixed batch: blocked symbols dropped, valid one still fetched
+  nextResponse = { body: { 'AUD/USD': { symbol: 'AUD/USD', close: '0.6600', previous_close: '0.6580', percent_change: '0.30' } } }
+  r = await fetchTwelveDataQuotes(['AUD/USD', 'BHP:ASX'])
+  check('mixed batch → only the valid (FX) symbol returned', r.status === 'ok' && r.quotes.size === 1 && !!r.quotes.get('AUD/USD'))
+
   // 13) Pure presentation helpers
   check('sourceLabel mapping', sourceLabel('twelvedata') === 'Twelve Data' && sourceLabel('stooq') === 'Stooq' && sourceLabel('frankfurter') === 'ECB')
   check('freshnessLabel mapping', freshnessLabel('twelvedata') === 'Live' && freshnessLabel('stooq') === 'Delayed' && freshnessLabel('frankfurter') === 'Daily')

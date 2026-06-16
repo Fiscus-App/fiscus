@@ -107,3 +107,41 @@ export const STOOQ_ASX_STOCKS = [
   { id: 'FMG', sym: 'fmg.au', name: 'Fortescue'           },
   { id: 'MQG', sym: 'mqg.au', name: 'Macquarie Group'     },
 ]
+
+// ─── Ticker-keyed ASX quotes (free, no API key, no credit limit) ─────────────
+// Replaces Twelve Data for ASX equities. The TD free tier can't serve
+// "<TICKER>:ASX" symbols (they error) but still bills a credit per symbol, so
+// using TD for the feed/quotes/asset surfaces silently drains the daily budget.
+// Maps "CBA" → "cba.au". Small in-memory cache de-dupes repeat lookups.
+
+interface CacheEntry { q: StooqQuote; expires: number }
+const tickerCache = new Map<string, CacheEntry>()
+const TICKER_TTL = 2 * 60 * 1000 // 2 min
+
+export async function fetchStooqQuotesByTicker(tickers: string[]): Promise<Map<string, StooqQuote>> {
+  const want = Array.from(new Set(tickers.map(t => t.toUpperCase().trim()).filter(Boolean)))
+  const out  = new Map<string, StooqQuote>()
+  if (want.length === 0) return out
+
+  const now = Date.now()
+  const missing: string[] = []
+  for (const t of want) {
+    const c = tickerCache.get(t)
+    if (c && c.expires > now) out.set(t, c.q)
+    else missing.push(t)
+  }
+
+  if (missing.length > 0) {
+    try {
+      const fresh = await fetchStooqQuotes(missing.map(t => ({ id: t, sym: `${t.toLowerCase()}.au` })))
+      for (const [t, q] of Array.from(fresh.entries())) {
+        out.set(t, q)
+        tickerCache.set(t, { q, expires: now + TICKER_TTL })
+      }
+    } catch {
+      // Stooq unreachable → return whatever was cached; callers degrade gracefully.
+    }
+  }
+
+  return out
+}

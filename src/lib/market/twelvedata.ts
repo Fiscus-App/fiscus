@@ -71,40 +71,22 @@ interface TDRawQuote {
   message?:        string
 }
 
-// ─── Symbol mapping (used by tickerToTD for feed-card price lookups) ──────────
+// ─── Free-tier guard ─────────────────────────────────────────────────────────
+// The Twelve Data free plan CANNOT serve ASX-listed equities ("<X>:ASX") or
+// indices — those requests return per-symbol errors but STILL consume an API
+// credit each, silently draining the 800/day budget and rate-limiting the
+// whole app. We skip them here so credits are only ever spent on symbols that
+// work on the free tier (forex, crypto, US equities, metal/oil pairs). ASX
+// equities + indices are sourced from Stooq instead (src/lib/market/stooq.ts).
+// If you upgrade to Grow+ (which unlocks indices + intl equities), delete this.
 
-const NON_PRICE = new Set(['RBA', 'ABS', 'APRA', 'TREASURY', 'GOVT', 'AFCA'])
+const TD_FREE_BLOCKED_INDEX = new Set([
+  'AXJO', 'SPX', 'GSPC', 'NI225', 'UKX', 'NDX', 'IXIC', 'DJI', 'DAX', 'HSI', 'FTSE',
+])
 
-export const TD_SYMBOLS: Record<string, { td: string; label: string; unit?: string }> = {
-  // FX (free tier)
-  AUDUSD: { td: 'AUD/USD', label: 'AUD/USD' },
-  AUDCNY: { td: 'AUD/CNY', label: 'AUD/CNY' },
-  AUDJPY: { td: 'AUD/JPY', label: 'AUD/JPY' },
-  AUDEUR: { td: 'AUD/EUR', label: 'AUD/EUR' },
-  // Commodities (free tier — priced as metal/oil vs USD)
-  GOLD:   { td: 'XAU/USD', label: 'Gold',    unit: '/oz'  },
-  OIL:    { td: 'WTI/USD', label: 'WTI Oil', unit: '/bbl' },
-  SILVER: { td: 'XAG/USD', label: 'Silver',  unit: '/oz'  },
-  // Top ASX stocks (NOTE: require a paid TD plan; free tier returns errors)
-  CBA:    { td: 'CBA:ASX', label: 'Commonwealth Bank' },
-  BHP:    { td: 'BHP:ASX', label: 'BHP Group'         },
-  WDS:    { td: 'WDS:ASX', label: 'Woodside Energy'   },
-  RIO:    { td: 'RIO:ASX', label: 'Rio Tinto'         },
-  FMG:    { td: 'FMG:ASX', label: 'Fortescue'         },
-  CSL:    { td: 'CSL:ASX', label: 'CSL Limited'       },
-  NAB:    { td: 'NAB:ASX', label: 'Natl Australia Bank' },
-  ANZ:    { td: 'ANZ:ASX', label: 'ANZ Group'         },
-}
-
-/** Map an ASX ticker string → Twelve Data symbol (for feed card price lookups). */
-export function tickerToTD(ticker: string): string | null {
-  const t = ticker.toUpperCase().trim()
-  if (!t || NON_PRICE.has(t)) return null
-  const entry = Object.values(TD_SYMBOLS).find(
-    (e) => e.td.toUpperCase() === `${t}:ASX` || e.td.toUpperCase() === t
-  )
-  if (entry) return entry.td
-  return `${t}:ASX` // default: assume ASX stock
+function isFreeTierBlocked(symbol: string): boolean {
+  const s = symbol.toUpperCase()
+  return /:ASX$/.test(s) || TD_FREE_BLOCKED_INDEX.has(s)
 }
 
 // ─── Normalization ───────────────────────────────────────────────────────────
@@ -158,7 +140,8 @@ function isRateLimit(code: number | undefined): boolean {
  */
 export async function fetchTwelveDataQuotes(symbols: string[]): Promise<TDBatchResult> {
   const empty = (): Map<string, TDQuote> => new Map()
-  const unique = Array.from(new Set(symbols.filter(Boolean)))
+  // Drop symbols the free tier can't serve — they'd error AND burn credits.
+  const unique = Array.from(new Set(symbols.filter(Boolean))).filter(s => !isFreeTierBlocked(s))
   if (unique.length === 0) return { status: 'ok', quotes: empty() }
 
   const key = process.env.TWELVE_DATA_API_KEY
@@ -234,6 +217,7 @@ export async function fetchSingleQuote(tdSymbol: string, displayTicker: string):
 
 /** 1-year weekly closes for charting. Returns [] on any failure. */
 export async function fetchTimeSeries(tdSymbol: string): Promise<number[]> {
+  if (isFreeTierBlocked(tdSymbol)) return []  // don't spend credits on unsupported symbols
   const cacheKey = `ts_${tdSymbol}`
   const cached   = getCached<number[]>(cacheKey)
   if (cached) return cached
@@ -265,29 +249,6 @@ export async function fetchTimeSeries(tdSymbol: string): Promise<number[]> {
   }
 }
 
-/** Batch price lookup keyed by ASX ticker (for feed cards). */
-export async function fetchQuotesByTicker(tickers: string[]): Promise<Map<string, TDQuote>> {
-  if (tickers.length === 0) return new Map()
-
-  const tickerToSym = new Map<string, string>() // ASX ticker → TD symbol
-  for (const t of tickers) {
-    const sym = tickerToTD(t)
-    if (sym && !tickerToSym.has(t)) tickerToSym.set(t, sym)
-  }
-  if (tickerToSym.size === 0) return new Map()
-
-  const cacheKey = Array.from(tickerToSym.values()).sort().join(',')
-  const cached   = getCached<Map<string, TDQuote>>(cacheKey)
-  if (cached) return cached
-
-  const { quotes } = await fetchTwelveDataQuotes(Array.from(tickerToSym.values()))
-
-  const out = new Map<string, TDQuote>()
-  for (const [ticker, sym] of Array.from(tickerToSym.entries())) {
-    const q = quotes.get(sym)
-    if (q) out.set(ticker, { ...q, ticker })
-  }
-
-  setCached(cacheKey, out, TTL_QUOTE)
-  return out
-}
+// NOTE: ASX-ticker price lookups for the feed / quotes / asset surfaces now use
+// Stooq (fetchStooqQuotesByTicker in stooq.ts) — the TD free tier can't serve
+// ":ASX" symbols and billing a credit for each would drain the daily budget.

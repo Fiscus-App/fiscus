@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
 import { fetchSingleQuote, fetchTimeSeries } from '@/lib/market/twelvedata'
+import { fetchStooqQuotes } from '@/lib/market/stooq'
 
 // ── Asset profile catalogue ───────────────────────────────────────────────────
 
@@ -58,6 +59,11 @@ function assetToTD(ticker: string, profile: AssetProfile): string | null {
   if (profile.type === 'FX') return `${ticker}/USD`
 
   return null
+}
+
+// Stooq symbols for indices — the Twelve Data free tier can't serve indices.
+const INDEX_STOOQ: Record<string, string> = {
+  XJO: '^axjo', SPX: '^spx', NDX: '^ndx', DJI: '^dji',
 }
 
 const PROFILES: Record<string, AssetProfile> = {
@@ -325,12 +331,34 @@ export async function GET(
   const ticker   = params.ticker.toUpperCase()
   const profile  = PROFILES[ticker] ?? buildFallback(ticker)
   const tdSymbol = assetToTD(ticker, profile)
+  const useStooq =
+    profile.type === 'INDEX' ||
+    (profile.type === 'STOCK' && profile.exchange?.toUpperCase() === 'ASX')
 
-  // ── Fetch live price + chart from Twelve Data (works from Lambda) ──────────
-  const [liveQuote, chartData] = await Promise.all([
-    tdSymbol ? fetchSingleQuote(tdSymbol, ticker).catch(() => null) : Promise.resolve(null),
-    tdSymbol ? fetchTimeSeries(tdSymbol).catch(() => [])            : Promise.resolve([]),
-  ])
+  // ── Live price + chart ──────────────────────────────────────────────────────
+  // ASX equities + indices come from Stooq (free, no key) — the Twelve Data free
+  // tier can't serve them and would just burn credits. Everything else (FX,
+  // commodities, US equities) uses Twelve Data.
+  let liveQuote: { price: number; change: number; changeAbs: number } | null = null
+  let chartData: number[] = []
+
+  if (useStooq) {
+    const sym = profile.type === 'INDEX' ? INDEX_STOOQ[ticker] : `${ticker.toLowerCase()}.au`
+    if (sym) {
+      const m = await fetchStooqQuotes([{ id: ticker, sym }])
+      const q = m.get(ticker)
+      if (q) liveQuote = { price: q.price, change: q.change, changeAbs: q.changeAbs }
+    }
+    // Stooq's simple CSV has no history → no sparkline for these (same as the
+    // prior behaviour, where TD time-series for ASX symbols returned empty).
+  } else if (tdSymbol) {
+    const [q, ts] = await Promise.all([
+      fetchSingleQuote(tdSymbol, ticker).catch(() => null),
+      fetchTimeSeries(tdSymbol).catch(() => [] as number[]),
+    ])
+    if (q) liveQuote = { price: q.price, change: q.change, changeAbs: q.changeAbs }
+    chartData = ts
+  }
 
   const liveProfile = liveQuote
     ? { ...profile, price: liveQuote.price, change: liveQuote.change, changeAbs: liveQuote.changeAbs, isLive: true }

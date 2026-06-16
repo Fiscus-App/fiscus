@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchQuotesByTicker } from '@/lib/market/twelvedata'
+import { fetchStooqQuotesByTicker } from '@/lib/market/stooq'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Provide ?tickers=CBA,BHP' }, { status: 400 })
   }
 
-  const quotesMap = await fetchQuotesByTicker(tickers).catch(() => new Map())
+  const quotesMap = await fetchStooqQuotesByTicker(tickers)
   const result: Record<string, { price: number; change: number; changeAbs: number }> = {}
 
   for (const [ticker, q] of Array.from(quotesMap.entries())) {
