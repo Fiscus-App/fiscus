@@ -1,34 +1,64 @@
 /**
- * /api/market/summary  — Lambda (Node.js)
+ * /api/market/summary — Node.js Lambda
  *
- * Returns FX rates + commodities (metals) only.
- * Stocks and indices are fetched separately by /api/market/stocks (Edge Runtime)
- * which uses Cloudflare IPs that Yahoo Finance does not block.
- *
- * Sources:
- *   • Twelve Data — real-time FX (AUD/USD, AUD/JPY) + gold (XAU/USD)
- *   • Frankfurter  — ECB reference FX backup (AUD/USD, AUD/CNY, AUD/JPY, AUD/EUR)
+ * Returns indices, FX, commodities, and top ASX movers via Yahoo Finance.
+ * No API key required. Falls back to Frankfurter ECB for FX if Yahoo is down.
  */
 
 import { NextResponse } from 'next/server'
-import { fetchMarketSummary } from '@/lib/market/twelvedata'
-import { fetchAUDRates }      from '@/lib/market/frankfurter'
+import { fetchMarketSummary, MARKET_SYMBOLS } from '@/lib/market/yahoo'
+import { fetchAUDRates } from '@/lib/market/frankfurter'
 
-const STOCK_NAMES: Record<string, string> = {
-  CBA: 'Commonwealth Bank',    BHP: 'BHP Group',
-  WDS: 'Woodside Energy',      RIO: 'Rio Tinto',
-  FMG: 'Fortescue',            CSL: 'CSL Limited',
-  NAB: 'Natl Australia Bank',  ANZ: 'ANZ Group',
+const INDEX_SYMBOLS: Record<string, string> = {
+  '^AXJO': 'ASX 200',
+  '^GSPC': 'S&P 500',
+  '^N225': 'Nikkei',
+  '^FTSE': 'FTSE 100',
+}
+
+const FX_SYMBOLS: Record<string, string> = {
+  'AUDUSD=X': 'AUD/USD',
+  'AUDCNY=X': 'AUD/CNY',
+  'AUDJPY=X': 'AUD/JPY',
+  'AUDEUR=X': 'AUD/EUR',
+}
+
+const COMMODITY_SYMBOLS: Record<string, { name: string; unit: string }> = {
+  'GC=F': { name: 'Gold',    unit: '/oz'  },
+  'CL=F': { name: 'WTI Oil', unit: '/bbl' },
+  'HG=F': { name: 'Copper',  unit: '/lb'  },
+  'SI=F': { name: 'Silver',  unit: '/oz'  },
+}
+
+const ASX_NAMES: Record<string, string> = {
+  'CBA.AX': 'Commonwealth Bank',
+  'BHP.AX': 'BHP Group',
+  'WDS.AX': 'Woodside Energy',
+  'RIO.AX': 'Rio Tinto',
+  'FMG.AX': 'Fortescue',
+  'CSL.AX': 'CSL Limited',
+  'NAB.AX': 'Natl Australia Bank',
+  'ANZ.AX': 'ANZ Group',
 }
 
 export async function GET() {
-  const [td, fxBackup] = await Promise.all([
-    fetchMarketSummary(),
-    fetchAUDRates(),
+  const [quotes, fxBackup] = await Promise.all([
+    fetchMarketSummary().catch(() => ({} as Record<string, import('@/lib/market/yahoo').Quote>)),
+    fetchAUDRates().catch(() => null),
   ])
 
-  // ── FX (Twelve Data → Frankfurter ECB backup) ─────────────────────────────
+  // ── Indices ──────────────────────────────────────────────────────────────
+  const indices = MARKET_SYMBOLS.indices.map((sym) => {
+    const q = quotes[sym]
+    return {
+      name:      INDEX_SYMBOLS[sym] ?? sym,
+      value:     q?.price     ?? null,
+      change:    q?.change    ?? null,
+      changeAbs: q?.changeAbs ?? null,
+    }
+  })
 
+  // ── FX (Yahoo → Frankfurter ECB fallback) ────────────────────────────────
   const fbRates: Record<string, number> = {}
   if (fxBackup?.rates) {
     if (fxBackup.rates.USD) fbRates['AUD/USD'] = fxBackup.rates.USD
@@ -37,55 +67,67 @@ export async function GET() {
     if (fxBackup.rates.EUR) fbRates['AUD/EUR'] = fxBackup.rates.EUR
   }
 
-  const fx = td.fx.map((f) => {
-    const tdVal     = f.quote?.price  ?? null
-    const backupVal = fbRates[f.pair] ?? null
+  const fx = MARKET_SYMBOLS.fx.map((sym) => {
+    const q     = quotes[sym]
+    const label = FX_SYMBOLS[sym] ?? sym
+    const live  = q?.price ?? null
+    const ecb   = fbRates[label] ?? null
     return {
-      pair:   f.pair,
-      value:  tdVal ?? backupVal,
-      change: f.quote?.change ?? null,
-      source: tdVal !== null ? 'live' : backupVal !== null ? 'ecb' : null,
+      pair:   label,
+      value:  live ?? ecb,
+      change: q?.change ?? null,
+      source: live !== null ? 'live' : ecb !== null ? 'ecb' : null,
     }
   })
 
-  // ── Commodities (Twelve Data: XAU/USD gold, etc.) ─────────────────────────
+  // ── Commodities ──────────────────────────────────────────────────────────
+  const commodities = MARKET_SYMBOLS.commodities.map((sym) => {
+    const q   = quotes[sym]
+    const def = COMMODITY_SYMBOLS[sym] ?? { name: sym, unit: '' }
+    return {
+      name:   def.name,
+      unit:   def.unit,
+      value:  q?.price  ?? null,
+      change: q?.change ?? null,
+    }
+  })
 
-  const commodities = td.commodities.map((c) => ({
-    name:   c.name,
-    unit:   c.unit,
-    value:  c.quote?.price  ?? null,
-    change: c.quote?.change ?? null,
-  }))
+  // ── ASX top movers ────────────────────────────────────────────────────────
+  const topMovers = MARKET_SYMBOLS.topAsx.map((sym) => {
+    const q      = quotes[sym]
+    const ticker = sym.replace('.AX', '')
+    return {
+      ticker,
+      name:      ASX_NAMES[sym] ?? ticker,
+      price:     q?.price     ?? null,
+      change:    q?.change    ?? null,
+      changeAbs: q?.changeAbs ?? null,
+    }
+  }).sort((a, b) => Math.abs(b.change ?? 0) - Math.abs(a.change ?? 0))
 
-  // ── Meta ──────────────────────────────────────────────────────────────────
+  // ── ASX 200 ───────────────────────────────────────────────────────────────
+  const axjoQ = quotes['^AXJO']
+  const asx = axjoQ
+    ? { price: axjoQ.price, change: axjoQ.change, changeAbs: axjoQ.changeAbs }
+    : null
 
-  const hasLiveFX          = fx.some((f) => f.value !== null)
-  const hasLiveCommodities = commodities.some((c) => c.value !== null)
+  const hasAnyLive = Object.keys(quotes).length > 0
 
   return NextResponse.json(
     {
-      // Stocks and indices start null — populated client-side from /api/market/stocks
-      indices: [
-        { name: 'ASX 200',  value: null, change: null, changeAbs: null },
-        { name: 'S&P 500',  value: null, change: null, changeAbs: null },
-        { name: 'Nikkei',   value: null, change: null, changeAbs: null },
-        { name: 'FTSE 100', value: null, change: null, changeAbs: null },
-      ],
+      indices,
       commodities,
       fx,
-      topMovers: Object.keys(STOCK_NAMES).map((ticker) => ({
-        ticker, name: STOCK_NAMES[ticker], price: null, change: null,
-      })),
-      asx: null,
+      topMovers,
+      asx,
       meta: {
         fetchedAt:          new Date().toISOString(),
-        hasAnyLive:         hasLiveFX || hasLiveCommodities,
-        hasLiveStocks:      false,
-        hasLiveFX,
-        hasLiveIndices:     false,
-        hasLiveCommodities,
-        fxDate:             fxBackup?.date ?? null,
-        dataSource:         'none',
+        hasAnyLive,
+        hasLiveStocks:      topMovers.some(m => m.price !== null),
+        hasLiveFX:          fx.some(f => f.value !== null),
+        hasLiveIndices:     indices.some(i => i.value !== null),
+        hasLiveCommodities: commodities.some(c => c.value !== null),
+        dataSource:         hasAnyLive ? 'yahoo' : 'none',
       },
     },
     { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' } }

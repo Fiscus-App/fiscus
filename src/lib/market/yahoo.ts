@@ -26,6 +26,9 @@ function getCached<T>(key: string): T | null {
 function setCached<T>(key: string, data: T): void {
   cache.set(key, { data, expires: Date.now() + TTL_MS })
 }
+function setCachedTTL<T>(key: string, data: T, ttlMs: number): void {
+  cache.set(key, { data, expires: Date.now() + ttlMs })
+}
 
 // ─── Yahoo Finance cookie + crumb auth ───────────────────────────────────────
 
@@ -187,6 +190,57 @@ export const MARKET_SYMBOLS = {
   commodities:['GC=F',  'CL=F',  'HG=F',  'SI=F'],
   fx:         ['AUDUSD=X', 'AUDCNY=X', 'AUDJPY=X', 'AUDEUR=X'],
   topAsx:     ['CBA.AX', 'BHP.AX', 'WDS.AX', 'RIO.AX', 'FMG.AX', 'CSL.AX', 'NAB.AX', 'ANZ.AX'],
+}
+
+// ─── fetchHistoricalChart ─────────────────────────────────────────────────────
+// Returns up to 52 weekly closing prices for charting.
+
+export interface HistoricalPoint {
+  timestamp: number   // unix seconds
+  close:     number
+}
+
+export async function fetchHistoricalChart(
+  symbol: string,
+  range: '1mo' | '3mo' | '6mo' | '1y' = '1y',
+): Promise<HistoricalPoint[]> {
+  const cacheKey = `chart_${symbol}_${range}`
+  const cached   = getCached<HistoricalPoint[]>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const interval = range === '1mo' || range === '3mo' ? '1d' : '1wk'
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`
+    const json = await yahooFetch(url) as {
+      chart?: {
+        result?: {
+          timestamp?: number[]
+          indicators?: { quote?: { close?: (number | null)[] }[] }
+        }[]
+      }
+    }
+
+    const result = json?.chart?.result?.[0]
+    if (!result) return []
+
+    const timestamps = result.timestamp ?? []
+    const closes     = result.indicators?.quote?.[0]?.close ?? []
+
+    const points: HistoricalPoint[] = []
+    for (let i = 0; i < timestamps.length; i++) {
+      const c = closes[i]
+      if (c != null && !isNaN(c)) {
+        points.push({ timestamp: timestamps[i], close: Math.round(c * 1000) / 1000 })
+      }
+    }
+
+    // Cache chart for 30 min — it changes slowly
+    setCachedTTL(cacheKey, points, 30 * 60 * 1000)
+    return points
+  } catch (err) {
+    console.error('[Yahoo] fetchHistoricalChart failed:', symbol, err)
+    return []
+  }
 }
 
 export async function fetchMarketSummary(): Promise<Record<string, Quote>> {

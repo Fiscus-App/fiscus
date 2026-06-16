@@ -25,6 +25,7 @@ interface AssetProfile {
   dividend?:   number
   description: string
   links?:      { label: string; url: string }[]
+  isLive?:     boolean
 }
 
 interface ChartPoint {
@@ -42,9 +43,10 @@ interface Article {
 }
 
 interface AssetData {
-  profile:  AssetProfile
-  chart:    number[]
-  articles: Article[]
+  profile:     AssetProfile
+  chart:       number[]
+  chartIsReal: boolean
+  articles:    Article[]
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -127,9 +129,11 @@ export default function AssetPage() {
   // ── Slice chart by tab ─────────────────────────────────────────────────────
   const chartPoints = (): ChartPoint[] => {
     if (!data) return []
-    const all  = data.chart
-    const cut  = tab === '1M' ? 48 : tab === '3M' ? 40 : tab === '6M' ? 26 : 0
-    const slice = all.slice(cut)
+    const all     = data.chart
+    const len     = all.length
+    const cutFrac = tab === '1M' ? 0.92 : tab === '3M' ? 0.77 : tab === '6M' ? 0.5 : 0
+    const cut     = Math.floor(len * cutFrac)
+    const slice   = all.slice(cut)
     return slice.map((price, i) => ({ week: cut + i + 1, price }))
   }
 
@@ -159,7 +163,7 @@ export default function AssetPage() {
     </div>
   )
 
-  const { profile, articles } = data
+  const { profile, articles, chartIsReal } = data
   const up = profile.change >= 0
 
   return (
@@ -226,13 +230,24 @@ export default function AssetPage() {
             {up ? '+' : ''}{profile.changeAbs >= 0 && profile.change < 0 ? '-' : ''}
             {formatPrice(Math.abs(profile.changeAbs), profile.currency, profile.type)} today
           </span>
-          <span style={{
-            fontSize: 10, fontWeight: 700, padding: '2px 6px',
-            borderRadius: 4, background: '#e8b84b20', color: '#e8b84b',
-            letterSpacing: '0.04em',
-          }}>
-            SIMULATED
-          </span>
+          {!profile.isLive && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '2px 6px',
+              borderRadius: 4, background: '#e8b84b20', color: '#e8b84b',
+              letterSpacing: '0.04em',
+            }}>
+              SIMULATED
+            </span>
+          )}
+          {profile.isLive && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '2px 6px',
+              borderRadius: 4, background: '#2ed49420', color: '#2ed494',
+              letterSpacing: '0.04em',
+            }}>
+              LIVE
+            </span>
+          )}
         </div>
       </div>
 

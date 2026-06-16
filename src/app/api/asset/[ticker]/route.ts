@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
+import { fetchQuotes, fetchHistoricalChart, toYahooSymbol } from '@/lib/market/yahoo'
 
 // ── Asset profile catalogue ───────────────────────────────────────────────────
 
@@ -26,18 +27,35 @@ interface AssetProfile {
   links?:      { label: string; url: string }[]
 }
 
-// Deterministic YTD chart — 52 weekly data points ending at current price
-function ytdChart(basePrice: number, volatility = 0.015, trend = 0.08): number[] {
+// Deterministic fallback chart — used only when Yahoo returns nothing
+function ghostChart(basePrice: number, volatility = 0.015, trend = 0.08): number[] {
   const points: number[] = []
-  let price = basePrice * (1 - trend * 0.9) // start ~trend% below current
+  let price = basePrice * (1 - trend * 0.9)
   for (let i = 0; i < 52; i++) {
     const drift = (trend / 52) + (Math.random() - 0.48) * volatility * price
     price = Math.max(price + drift, price * 0.9)
     points.push(Math.round(price * 100) / 100)
   }
-  // Force last point = current price
   points[51] = basePrice
   return points
+}
+
+// Map our ticker to a Yahoo Finance symbol
+function assetToYahoo(ticker: string, type: AssetType): string | null {
+  const overrides: Record<string, string> = {
+    GOLD:  'GC=F',
+    OIL:   'CL=F',
+    SILVER:'SI=F',
+    AUD:   'AUDUSD=X',
+    XJO:   '^AXJO',
+    SPX:   '^GSPC',
+    NDX:   '^IXIC',
+    DJI:   '^DJI',
+    RBA:   null as unknown as string,
+  }
+  if (ticker in overrides) return overrides[ticker]
+  if (type === 'STOCK') return toYahooSymbol(ticker) // adds .AX for ASX
+  return null
 }
 
 const PROFILES: Record<string, AssetProfile> = {
@@ -304,9 +322,33 @@ export async function GET(
 ) {
   const ticker  = params.ticker.toUpperCase()
   const profile = PROFILES[ticker] ?? buildFallback(ticker)
-  const chart   = ytdChart(profile.price, profile.type === 'COMMODITY' ? 0.022 : 0.018, 0.09)
 
-  // Articles from DB matching this ticker or sector
+  // ── Fetch real price + chart from Yahoo Finance in parallel ───────────────
+  const yahooSym = assetToYahoo(ticker, profile.type)
+
+  const [liveQuotes, historicalPoints] = await Promise.all([
+    yahooSym ? fetchQuotes([ticker]).catch(() => new Map()) : Promise.resolve(new Map()),
+    yahooSym ? fetchHistoricalChart(yahooSym, '1y').catch(() => []) : Promise.resolve([]),
+  ])
+
+  // Merge live quote into profile (override ghost price if real data available)
+  const liveQuote = liveQuotes.get(ticker)
+  const liveProfile = liveQuote
+    ? {
+        ...profile,
+        price:     liveQuote.price,
+        change:    liveQuote.change,
+        changeAbs: liveQuote.changeAbs,
+        isLive:    true,
+      }
+    : { ...profile, isLive: false }
+
+  // Build chart array — real closes if available, ghost fallback otherwise
+  const chart: number[] = historicalPoints.length > 0
+    ? historicalPoints.map(p => p.close)
+    : ghostChart(liveProfile.price, profile.type === 'COMMODITY' ? 0.022 : 0.018, 0.09)
+
+  // ── Articles from DB ───────────────────────────────────────────────────────
   let articles: {
     id: string
     title: string
@@ -328,11 +370,8 @@ export async function GET(
           ],
         },
         select: {
-          id: true,
-          title: true,
-          summary: true,
-          publishedAt: true,
-          sector: true,
+          id: true, title: true, summary: true,
+          publishedAt: true, sector: true,
           source: { select: { name: true } },
         },
         orderBy: { publishedAt: 'desc' },
@@ -341,16 +380,20 @@ export async function GET(
     } catch { /* ignore */ }
   }
 
-  return NextResponse.json({
-    profile,
-    chart,
-    articles: articles.map(a => ({
-      id:          a.id,
-      title:       a.title,
-      summary:     a.summary,
-      publishedAt: a.publishedAt,
-      source:      a.source.name,
-      sector:      a.sector,
-    })),
-  })
+  return NextResponse.json(
+    {
+      profile: liveProfile,
+      chart,
+      chartIsReal: historicalPoints.length > 0,
+      articles: articles.map(a => ({
+        id:          a.id,
+        title:       a.title,
+        summary:     a.summary,
+        publishedAt: a.publishedAt,
+        source:      a.source.name,
+        sector:      a.sector,
+      })),
+    },
+    { headers: { 'Cache-Control': 'public, s-maxage=180, stale-while-revalidate=60' } }
+  )
 }

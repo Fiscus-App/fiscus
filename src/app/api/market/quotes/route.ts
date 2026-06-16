@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { fetchQuotesByTicker } from '@/lib/market/twelvedata'
+import { fetchQuotes } from '@/lib/market/yahoo'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -10,9 +10,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Provide ?tickers=CBA,BHP,WDS' }, { status: 400 })
   }
 
-  const quotes = await fetchQuotesByTicker(tickers)
+  const quotesMap = await fetchQuotes(tickers).catch(() => new Map())
+  const result: Record<string, { price: number; change: number; changeAbs: number }> = {}
 
-  return NextResponse.json(Object.fromEntries(quotes), {
-    headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' },
+  for (const [ticker, q] of Array.from(quotesMap.entries())) {
+    result[ticker] = { price: q.price, change: q.change, changeAbs: q.changeAbs }
+  }
+
+  return NextResponse.json(result, {
+    headers: { 'Cache-Control': 'public, s-maxage=180, stale-while-revalidate=60' },
   })
 }
