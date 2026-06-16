@@ -1,55 +1,121 @@
 /**
  * /api/market/summary
  *
- * Data sources — all free, no API key, not blocked from Vercel Lambda:
- *   • Stooq  — stocks, indices, commodities (same principle as Frankfurter for FX)
- *   • Frankfurter — AUD FX rates from ECB
- *
- * Twelve Data is used as a bonus top-up if the env key is present, but the
- * page will show real data even without it.
+ * Primary:  Twelve Data REST API  — stocks, indices, commodities (API key in Vercel env)
+ * FX:       Frankfurter (ECB)     — AUD FX rates, free, no key, confirmed working
  */
 
 import { NextResponse } from 'next/server'
-import {
-  fetchStooqQuotes,
-  STOOQ_INDICES,
-  STOOQ_COMMODITIES,
-  STOOQ_ASX_STOCKS,
-} from '@/lib/market/stooq'
 import { fetchAUDRates } from '@/lib/market/frankfurter'
 
+const TD_BASE = 'https://api.twelvedata.com'
+
+// All symbols we need in one batch — 1 credit each
+const SYMBOLS = [
+  // Indices
+  'AXJO', 'SPX', 'NI225', 'UKX',
+  // Commodities
+  'XAU/USD', 'XAG/USD', 'WTI/USD',
+  // ASX stocks
+  'CBA:ASX', 'BHP:ASX', 'CSL:ASX', 'NAB:ASX',
+  'WBC:ASX', 'WDS:ASX', 'RIO:ASX', 'ANZ:ASX',
+  'FMG:ASX', 'MQG:ASX',
+]
+
+interface TDQuote {
+  symbol:          string
+  name?:           string
+  close?:          string
+  previous_close?: string
+  change?:         string
+  percent_change?: string
+  status?:         string
+  code?:           number
+}
+
+async function fetchTD(): Promise<Map<string, TDQuote>> {
+  const key = process.env.TWELVE_DATA_API_KEY
+  if (!key) {
+    console.error('[TD] TWELVE_DATA_API_KEY not set in env')
+    return new Map()
+  }
+
+  try {
+    const url = `${TD_BASE}/quote?symbol=${encodeURIComponent(SYMBOLS.join(','))}&apikey=${key}`
+    console.log('[TD] fetching', SYMBOLS.length, 'symbols')
+    const res = await fetch(url, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12000),
+    })
+    if (!res.ok) {
+      console.error('[TD] HTTP error', res.status)
+      return new Map()
+    }
+    const json = await res.json() as Record<string, TDQuote>
+    const out = new Map<string, TDQuote>()
+    for (const [sym, q] of Object.entries(json)) {
+      if (q && q.status !== 'error' && !q.code && q.close) {
+        out.set(sym, q)
+      } else {
+        console.warn('[TD] bad quote for', sym, JSON.stringify(q).slice(0, 80))
+      }
+    }
+    console.log('[TD] got', out.size, 'valid quotes out of', SYMBOLS.length)
+    return out
+  } catch (e) {
+    console.error('[TD] fetch threw:', e)
+    return new Map()
+  }
+}
+
+function price(q: TDQuote | undefined): number | null {
+  if (!q) return null
+  const v = parseFloat(q.close ?? '')
+  return isNaN(v) ? null : v
+}
+function changePct(q: TDQuote | undefined): number | null {
+  if (!q) return null
+  const v = parseFloat(q.percent_change ?? '')
+  return isNaN(v) ? null : v
+}
+function changeAbs(q: TDQuote | undefined): number | null {
+  if (!q) return null
+  const v = parseFloat(q.change ?? '')
+  return isNaN(v) ? null : v
+}
+
 export async function GET() {
-  // Fire all free sources in parallel — same pattern as fetchAUDRates() for FX
-  const [indexQuotes, commodityQuotes, stockQuotes, fxRates] = await Promise.all([
-    fetchStooqQuotes(STOOQ_INDICES).catch(() => new Map()),
-    fetchStooqQuotes(STOOQ_COMMODITIES).catch(() => new Map()),
-    fetchStooqQuotes(STOOQ_ASX_STOCKS).catch(() => new Map()),
+  const [quotes, fxRates] = await Promise.all([
+    fetchTD(),
     fetchAUDRates().catch(() => null),
   ])
 
   // ── Indices ────────────────────────────────────────────────────────────────
-  const indices = STOOQ_INDICES.map(({ id }) => {
-    const q = indexQuotes.get(id)
-    return {
-      name:      id,
-      value:     q?.price     ?? null,
-      change:    q?.change    ?? null,
-      changeAbs: q?.changeAbs ?? null,
-    }
-  })
+  const indices = [
+    { name: 'ASX 200',   sym: 'AXJO'  },
+    { name: 'S&P 500',   sym: 'SPX'   },
+    { name: 'Nikkei',    sym: 'NI225' },
+    { name: 'FTSE 100',  sym: 'UKX'   },
+  ].map(({ name, sym }) => ({
+    name,
+    value:     price(quotes.get(sym)),
+    change:    changePct(quotes.get(sym)),
+    changeAbs: changeAbs(quotes.get(sym)),
+  }))
 
   // ── Commodities ────────────────────────────────────────────────────────────
-  const commodities = STOOQ_COMMODITIES.map(({ id, unit }) => {
-    const q = commodityQuotes.get(id)
-    return {
-      name:   id,
-      unit,
-      value:  q?.price  ?? null,
-      change: q?.change ?? null,
-    }
-  })
+  const commodities = [
+    { name: 'Gold',     sym: 'XAU/USD', unit: '/oz'  },
+    { name: 'Silver',   sym: 'XAG/USD', unit: '/oz'  },
+    { name: 'WTI Oil',  sym: 'WTI/USD', unit: '/bbl' },
+  ].map(({ name, sym, unit }) => ({
+    name,
+    unit,
+    value:  price(quotes.get(sym)),
+    change: changePct(quotes.get(sym)),
+  }))
 
-  // ── FX — Frankfurter (same as before, this is what already worked) ─────────
+  // ── FX — Frankfurter (free, no key, already confirmed working) ─────────────
   const rates = fxRates?.rates ?? {}
   const fx = [
     { pair: 'AUD/USD', value: rates.USD ?? null },
@@ -57,24 +123,33 @@ export async function GET() {
     { pair: 'AUD/JPY', value: rates.JPY ?? null },
     { pair: 'AUD/EUR', value: rates.EUR ?? null },
   ].map(f => ({ ...f, change: null as number | null }))
-  // Note: Frankfurter doesn't provide % change — that's fine, values show correctly
 
   // ── ASX Stocks ─────────────────────────────────────────────────────────────
-  const topMovers = STOOQ_ASX_STOCKS.map(({ id, name }) => {
-    const q = stockQuotes.get(id)
-    return {
-      ticker:    id,
-      name,
-      price:     q?.price     ?? null,
-      change:    q?.change    ?? null,
-      changeAbs: q?.changeAbs ?? null,
-    }
-  })
+  const STOCKS = [
+    { id: 'CBA', sym: 'CBA:ASX', name: 'Commonwealth Bank'  },
+    { id: 'BHP', sym: 'BHP:ASX', name: 'BHP Group'          },
+    { id: 'CSL', sym: 'CSL:ASX', name: 'CSL Limited'        },
+    { id: 'NAB', sym: 'NAB:ASX', name: 'National Australia' },
+    { id: 'WBC', sym: 'WBC:ASX', name: 'Westpac Banking'    },
+    { id: 'WDS', sym: 'WDS:ASX', name: 'Woodside Energy'    },
+    { id: 'RIO', sym: 'RIO:ASX', name: 'Rio Tinto'          },
+    { id: 'ANZ', sym: 'ANZ:ASX', name: 'ANZ Group'          },
+    { id: 'FMG', sym: 'FMG:ASX', name: 'Fortescue'          },
+    { id: 'MQG', sym: 'MQG:ASX', name: 'Macquarie Group'    },
+  ]
+
+  const topMovers = STOCKS.map(({ id, sym, name }) => ({
+    ticker:    id,
+    name,
+    price:     price(quotes.get(sym)),
+    change:    changePct(quotes.get(sym)),
+    changeAbs: changeAbs(quotes.get(sym)),
+  }))
 
   // ASX 200 for hero
-  const asxQ = indexQuotes.get('ASX 200')
-  const asx  = asxQ
-    ? { price: asxQ.price, change: asxQ.change, changeAbs: asxQ.changeAbs }
+  const asxQ = quotes.get('AXJO')
+  const asx = asxQ
+    ? { price: parseFloat(asxQ.close!), change: parseFloat(asxQ.percent_change ?? '0'), changeAbs: parseFloat(asxQ.change ?? '0') }
     : null
 
   const hasAnyLive =
@@ -82,19 +157,10 @@ export async function GET() {
     topMovers.some(m => m.price !== null) ||
     fx.some(f => f.value !== null)
 
+  console.log('[summary] hasAnyLive:', hasAnyLive, '| TD quotes:', quotes.size, '| FX:', !!fxRates)
+
   return NextResponse.json(
-    {
-      indices,
-      commodities,
-      fx,
-      topMovers,
-      asx,
-      meta: {
-        fetchedAt:  new Date().toISOString(),
-        hasAnyLive,
-        dataSource: 'stooq+frankfurter',
-      },
-    },
-    { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=60' } }
+    { indices, commodities, fx, topMovers, asx, meta: { fetchedAt: new Date().toISOString(), hasAnyLive, dataSource: 'twelvedata+frankfurter' } },
+    { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=30' } }
   )
 }
