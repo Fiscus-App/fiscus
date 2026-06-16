@@ -8,16 +8,18 @@ export async function GET() {
   // ── Twelve Data ───────────────────────────────────────────────────────────
   let tdResults: Record<string, string> = {}
   if (tdKey) {
-    const syms = ['AUD/USD', 'XAU/USD', 'AUD/JPY']
+    const syms = ['AUD/USD', 'XAU/USD', 'XAG/USD', 'WTI/USD', 'AXJO', 'SPX', 'NI225', 'UKX', 'CBA:ASX', 'BHP:ASX']
     try {
       const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(syms.join(','))}&apikey=${tdKey}`
       const res = await fetch(url, { cache: 'no-store' })
-      const raw = await res.json() as Record<string, { status?: string; close?: string; message?: string }>
+      const raw = await res.json() as Record<string, { status?: string; close?: string; message?: string; code?: number }>
       for (const s of syms) {
         const r = raw[s]
-        if (!r)                        tdResults[s] = 'missing'
-        else if (r.status === 'error') tdResults[s] = `ERROR: ${r.message}`
-        else                           tdResults[s] = `OK — ${r.close}`
+        if (!r)                               tdResults[s] = 'missing'
+        else if (r.status === 'error')        tdResults[s] = `ERROR: ${r.message}`
+        else if (r.code)                      tdResults[s] = `CODE ${r.code}: ${r.message}`
+        else if (!r.close)                    tdResults[s] = `NO PRICE: ${JSON.stringify(r).slice(0,100)}`
+        else                                  tdResults[s] = `OK — ${r.close}`
       }
     } catch (e) { tdResults = { error: String(e) } }
   } else {
