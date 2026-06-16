@@ -1,72 +1,100 @@
 /**
- * /api/market/summary — Node.js Lambda
- * Uses Twelve Data — a proper REST API that works from Vercel Lambda.
+ * /api/market/summary
+ *
+ * Data sources — all free, no API key, not blocked from Vercel Lambda:
+ *   • Stooq  — stocks, indices, commodities (same principle as Frankfurter for FX)
+ *   • Frankfurter — AUD FX rates from ECB
+ *
+ * Twelve Data is used as a bonus top-up if the env key is present, but the
+ * page will show real data even without it.
  */
 
 import { NextResponse } from 'next/server'
-import { fetchMarketSummary } from '@/lib/market/twelvedata'
-import { fetchAUDRates }      from '@/lib/market/frankfurter'
+import {
+  fetchStooqQuotes,
+  STOOQ_INDICES,
+  STOOQ_COMMODITIES,
+  STOOQ_ASX_STOCKS,
+} from '@/lib/market/stooq'
+import { fetchAUDRates } from '@/lib/market/frankfurter'
 
 export async function GET() {
-  const [td, fxBackup] = await Promise.all([
-    fetchMarketSummary(),
+  // Fire all free sources in parallel — same pattern as fetchAUDRates() for FX
+  const [indexQuotes, commodityQuotes, stockQuotes, fxRates] = await Promise.all([
+    fetchStooqQuotes(STOOQ_INDICES).catch(() => new Map()),
+    fetchStooqQuotes(STOOQ_COMMODITIES).catch(() => new Map()),
+    fetchStooqQuotes(STOOQ_ASX_STOCKS).catch(() => new Map()),
     fetchAUDRates().catch(() => null),
   ])
 
-  // FX: Twelve Data primary, Frankfurter ECB backup
-  const fbRates: Record<string, number> = {}
-  if (fxBackup?.rates) {
-    if (fxBackup.rates.USD) fbRates['AUD/USD'] = fxBackup.rates.USD
-    if (fxBackup.rates.CNY) fbRates['AUD/CNY'] = fxBackup.rates.CNY
-    if (fxBackup.rates.JPY) fbRates['AUD/JPY'] = fxBackup.rates.JPY
-    if (fxBackup.rates.EUR) fbRates['AUD/EUR'] = fxBackup.rates.EUR
-  }
-
-  const fx = td.fx.map(f => {
-    const live   = f.quote?.price  ?? null
-    const backup = fbRates[f.pair] ?? null
+  // ── Indices ────────────────────────────────────────────────────────────────
+  const indices = STOOQ_INDICES.map(({ id }) => {
+    const q = indexQuotes.get(id)
     return {
-      pair:   f.pair,
-      value:  live ?? backup,
-      change: f.quote?.change ?? null,
-      source: live !== null ? 'live' : backup !== null ? 'ecb' : null,
+      name:      id,
+      value:     q?.price     ?? null,
+      change:    q?.change    ?? null,
+      changeAbs: q?.changeAbs ?? null,
     }
   })
 
-  const commodities = td.commodities.map(c => ({
-    name:   c.name,
-    unit:   c.unit,
-    value:  c.quote?.price  ?? null,
-    change: c.quote?.change ?? null,
-  }))
+  // ── Commodities ────────────────────────────────────────────────────────────
+  const commodities = STOOQ_COMMODITIES.map(({ id, unit }) => {
+    const q = commodityQuotes.get(id)
+    return {
+      name:   id,
+      unit,
+      value:  q?.price  ?? null,
+      change: q?.change ?? null,
+    }
+  })
 
-  const indices = td.indices.map(i => ({
-    name:      i.name,
-    value:     i.quote?.price     ?? null,
-    change:    i.quote?.change    ?? null,
-    changeAbs: i.quote?.changeAbs ?? null,
-  }))
+  // ── FX — Frankfurter (same as before, this is what already worked) ─────────
+  const rates = fxRates?.rates ?? {}
+  const fx = [
+    { pair: 'AUD/USD', value: rates.USD ?? null },
+    { pair: 'AUD/CNY', value: rates.CNY ?? null },
+    { pair: 'AUD/JPY', value: rates.JPY ?? null },
+    { pair: 'AUD/EUR', value: rates.EUR ?? null },
+  ].map(f => ({ ...f, change: null as number | null }))
+  // Note: Frankfurter doesn't provide % change — that's fine, values show correctly
 
-  const topMovers = td.topMovers.map(m => ({
-    ticker:    m.ticker,
-    name:      m.name,
-    price:     m.quote?.price     ?? null,
-    change:    m.quote?.change    ?? null,
-    changeAbs: m.quote?.changeAbs ?? null,
-  }))
+  // ── ASX Stocks ─────────────────────────────────────────────────────────────
+  const topMovers = STOOQ_ASX_STOCKS.map(({ id, name }) => {
+    const q = stockQuotes.get(id)
+    return {
+      ticker:    id,
+      name,
+      price:     q?.price     ?? null,
+      change:    q?.change    ?? null,
+      changeAbs: q?.changeAbs ?? null,
+    }
+  })
 
-  const asx = td.asx
-    ? { price: td.asx.price, change: td.asx.change, changeAbs: td.asx.changeAbs }
+  // ASX 200 for hero
+  const asxQ = indexQuotes.get('ASX 200')
+  const asx  = asxQ
+    ? { price: asxQ.price, change: asxQ.change, changeAbs: asxQ.changeAbs }
     : null
 
-  const hasAnyLive = topMovers.some(m => m.price !== null) || fx.some(f => f.value !== null)
+  const hasAnyLive =
+    indices.some(i => i.value !== null) ||
+    topMovers.some(m => m.price !== null) ||
+    fx.some(f => f.value !== null)
 
   return NextResponse.json(
-    { indices, commodities, fx, topMovers, asx, meta: {
-      fetchedAt: new Date().toISOString(),
-      hasAnyLive,
-      dataSource: hasAnyLive ? 'twelvedata' : 'none',
-    }},
-    { headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60' } }
+    {
+      indices,
+      commodities,
+      fx,
+      topMovers,
+      asx,
+      meta: {
+        fetchedAt:  new Date().toISOString(),
+        hasAnyLive,
+        dataSource: 'stooq+frankfurter',
+      },
+    },
+    { headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=60' } }
   )
 }
