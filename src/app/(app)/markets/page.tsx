@@ -21,6 +21,73 @@ interface MarketSummary {
   meta:        { hasAnyLive: boolean; dataSource: string; fetchedAt: string }
 }
 
+// ─── Ghost fallback data (shown when API unavailable) ─────────────────────────
+
+const GHOST: MarketSummary = {
+  asx: { price: 8312.4, change: 0.74, changeAbs: 61.2 },
+  indices: [
+    { name: 'ASX 200',  value: 8312.4,  change:  0.74,   changeAbs:  61.2 },
+    { name: 'S&P 500',  value: 5842.6,  change:  0.38,   changeAbs:  22.1 },
+    { name: 'Nikkei',   value: 38942.0, change: -0.21,   changeAbs: -81.8 },
+    { name: 'FTSE 100', value: 8456.2,  change:  0.15,   changeAbs:  12.7 },
+  ],
+  commodities: [
+    { name: 'Gold',    unit: '/oz',  value: 3298.40, change: 0.42 },
+    { name: 'WTI Oil', unit: '/bbl', value:   68.14, change: -0.88 },
+    { name: 'Silver',  unit: '/oz',  value:   32.64, change:  0.31 },
+  ],
+  fx: [
+    { pair: 'AUD/USD', value: 0.6482, change:  0.24, source: null },
+    { pair: 'AUD/CNY', value: 4.7021, change:  0.18, source: null },
+    { pair: 'AUD/JPY', value: 98.340, change: -0.12, source: null },
+    { pair: 'AUD/EUR', value: 0.5961, change:  0.09, source: null },
+  ],
+  topMovers: [
+    { ticker: 'CBA', name: 'Commonwealth Bank',    price: 162.40, change:  1.82, changeAbs:  2.91 },
+    { ticker: 'BHP', name: 'BHP Group',            price:  45.12, change: -0.64, changeAbs: -0.29 },
+    { ticker: 'WDS', name: 'Woodside Energy',      price:  26.88, change:  0.97, changeAbs:  0.26 },
+    { ticker: 'RIO', name: 'Rio Tinto',            price: 119.46, change:  0.31, changeAbs:  0.37 },
+    { ticker: 'FMG', name: 'Fortescue',            price:  19.72, change: -1.14, changeAbs: -0.23 },
+    { ticker: 'CSL', name: 'CSL Limited',          price: 298.30, change:  0.54, changeAbs:  1.61 },
+    { ticker: 'NAB', name: 'Natl Australia Bank',  price:  38.64, change:  0.72, changeAbs:  0.28 },
+    { ticker: 'ANZ', name: 'ANZ Group',            price:  31.92, change: -0.19, changeAbs: -0.06 },
+  ],
+  meta: { hasAnyLive: false, dataSource: 'ghost', fetchedAt: new Date().toISOString() },
+}
+
+// Merge: use live value when non-null, otherwise fall back to ghost value
+function mergeWithGhost(live: MarketSummary | null): MarketSummary {
+  if (!live) return GHOST
+  return {
+    asx: live.asx ?? GHOST.asx,
+    meta: live.meta,
+    indices: live.indices.map((idx, i) => ({
+      ...idx,
+      value:     idx.value     ?? GHOST.indices[i]?.value     ?? null,
+      change:    idx.change    ?? GHOST.indices[i]?.change    ?? null,
+      changeAbs: idx.changeAbs ?? GHOST.indices[i]?.changeAbs ?? null,
+    })),
+    commodities: live.commodities.map((c, i) => ({
+      ...c,
+      value:  c.value  ?? GHOST.commodities[i]?.value  ?? null,
+      change: c.change ?? GHOST.commodities[i]?.change ?? null,
+    })),
+    fx: live.fx.map((f, i) => ({
+      ...f,
+      value:  f.value  ?? GHOST.fx[i]?.value  ?? null,
+      change: f.change ?? GHOST.fx[i]?.change ?? null,
+    })),
+    topMovers: live.topMovers.length > 0
+      ? live.topMovers.map((m, i) => ({
+          ...m,
+          price:     m.price     ?? GHOST.topMovers[i]?.price     ?? null,
+          change:    m.change    ?? GHOST.topMovers[i]?.change    ?? null,
+          changeAbs: m.changeAbs ?? GHOST.topMovers[i]?.changeAbs ?? null,
+        }))
+      : GHOST.topMovers,
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number | null, decimals = 2) {
@@ -72,19 +139,20 @@ function Skeleton({ h = 48, rounded = 'rounded-xl' }: { h?: number; rounded?: st
 
 export default function MarketsPage() {
   const router  = useRouter()
-  const [data,    setData]    = useState<MarketSummary | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [liveData, setLiveData] = useState<MarketSummary | null>(null)
+  const [loading,  setLoading]  = useState(true)
 
   useEffect(() => {
     fetch('/api/market/summary')
       .then(r => r.ok ? r.json() : null)
-      .then((d: MarketSummary | null) => { if (d) setData(d) })
+      .then((d: MarketSummary | null) => { if (d) setLiveData(d) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  const live   = data?.meta?.hasAnyLive ?? false
-  const asx    = data?.asx
+  const data   = loading ? null : mergeWithGhost(liveData)
+  const live   = liveData?.meta?.hasAnyLive ?? false
+  const asx    = data?.asx ?? GHOST.asx
   const asxUp  = (asx?.change ?? 0) >= 0
 
   return (
@@ -149,7 +217,7 @@ export default function MarketsPage() {
             <div className="grid grid-cols-2 gap-2">{[1,2,3,4].map(i => <Skeleton key={i} h={72} rounded="rounded-2xl" />)}</div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {(data?.indices ?? []).map(idx => (
+              {(data?.indices ?? GHOST.indices).map(idx => (
                 <div key={idx.name} className="rounded-2xl p-3.5"
                   style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
                   <div className="text-[9px] font-mono tracking-[0.14em] uppercase mb-2"
@@ -171,7 +239,7 @@ export default function MarketsPage() {
             <Skeleton h={280} rounded="rounded-2xl" />
           ) : (
             <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-              {(data?.topMovers ?? []).map((m, i, arr) => (
+              {(data?.topMovers ?? GHOST.topMovers).map((m, i, arr) => (
                 <button key={m.ticker}
                   onClick={() => router.push(`/asset/${m.ticker}`)}
                   className="w-full flex items-center gap-3 px-4 py-3 text-left"
@@ -206,7 +274,7 @@ export default function MarketsPage() {
             <Skeleton h={180} rounded="rounded-2xl" />
           ) : (
             <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-              {(data?.commodities ?? []).map((c, i, arr) => (
+              {(data?.commodities ?? GHOST.commodities).map((c, i, arr) => (
                 <div key={c.name} className="flex items-center justify-between px-4 py-3"
                   style={{ background: 'var(--bg-2)', borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none' }}>
                   <span className="text-[13px] font-semibold">{c.name}</span>
@@ -230,7 +298,7 @@ export default function MarketsPage() {
             <div className="grid grid-cols-2 gap-2">{[1,2,3,4].map(i => <Skeleton key={i} h={72} rounded="rounded-2xl" />)}</div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {(data?.fx ?? []).map(fx => (
+              {(data?.fx ?? GHOST.fx).map(fx => (
                 <div key={fx.pair} className="rounded-2xl p-3.5"
                   style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
                   <div className="text-[9px] font-mono tracking-[0.14em] uppercase mb-2"
