@@ -27,18 +27,6 @@ interface AssetProfile {
   links?:      { label: string; url: string }[]
 }
 
-// Deterministic fallback chart — used only when Yahoo returns nothing
-function ghostChart(basePrice: number, volatility = 0.015, trend = 0.08): number[] {
-  const points: number[] = []
-  let price = basePrice * (1 - trend * 0.9)
-  for (let i = 0; i < 52; i++) {
-    const drift = (trend / 52) + (Math.random() - 0.48) * volatility * price
-    price = Math.max(price + drift, price * 0.9)
-    points.push(Math.round(price * 100) / 100)
-  }
-  points[51] = basePrice
-  return points
-}
 
 // Map our ticker to the correct Twelve Data symbol.
 function assetToTD(ticker: string, profile: AssetProfile): string | null {
@@ -348,9 +336,7 @@ export async function GET(
     ? { ...profile, price: liveQuote.price, change: liveQuote.change, changeAbs: liveQuote.changeAbs, isLive: true }
     : { ...profile, isLive: false }
 
-  const chart = chartData.length > 0
-    ? chartData
-    : ghostChart(liveProfile.price, profile.type === 'COMMODITY' ? 0.022 : 0.018, 0.09)
+  const chart = chartData.length > 0 ? chartData : []
 
   // ── Articles from DB ───────────────────────────────────────────────────────
   let articles: {

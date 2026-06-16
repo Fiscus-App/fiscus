@@ -234,15 +234,6 @@ export default function AssetPage() {
           }}>
             {up ? '+' : ''}{formatPrice(Math.abs(changeAbs), profile.currency, profile.type)} today
           </span>
-          {!isLive && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 6px',
-              borderRadius: 4, background: '#e8b84b20', color: '#e8b84b',
-              letterSpacing: '0.04em',
-            }}>
-              SIMULATED
-            </span>
-          )}
           {isLive && (
             <span style={{
               fontSize: 10, fontWeight: 700, padding: '2px 6px',

@@ -197,10 +197,6 @@ export default function SearchPage() {
                     <span style={{ fontSize: 14 }}>{cat.icon}</span>
                     <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
                       style={{ color: 'var(--text-muted)' }}>{cat.label}</span>
-                    <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(232,184,75,0.08)', color: 'rgba(232,184,75,0.50)', border: '1px solid rgba(232,184,75,0.12)' }}>
-                      SIMULATED
-                    </span>
                   </div>
                 </div>
 
