@@ -192,6 +192,41 @@ export const MARKET_SYMBOLS = {
   topAsx:     ['CBA.AX', 'BHP.AX', 'WDS.AX', 'RIO.AX', 'FMG.AX', 'CSL.AX', 'NAB.AX', 'ANZ.AX'],
 }
 
+// ─── fetchBySymbol ────────────────────────────────────────────────────────────
+// Fetch a single quote using the exact Yahoo Finance symbol (no conversion).
+
+export async function fetchBySymbol(symbol: string): Promise<Quote | null> {
+  const cacheKey = `sym_${symbol}`
+  const cached   = getCached<Quote>(cacheKey)
+  if (cached) return cached
+
+  try {
+    const fields = 'regularMarketPrice,regularMarketChangePercent,regularMarketChange,regularMarketPreviousClose,regularMarketVolume,shortName,marketState'
+    const url    = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}&fields=${fields}`
+    const json   = await yahooFetch(url) as { quoteResponse?: { result?: Record<string, unknown>[] } }
+    const r      = json?.quoteResponse?.result?.[0]
+    if (!r) return null
+
+    const quote: Quote = {
+      ticker:      symbol,
+      symbol,
+      price:      (r.regularMarketPrice           as number) ?? 0,
+      change:     (r.regularMarketChangePercent    as number) ?? 0,
+      changeAbs:  (r.regularMarketChange           as number) ?? 0,
+      prevClose:  (r.regularMarketPreviousClose    as number) ?? 0,
+      volume:      r.regularMarketVolume           as number | undefined,
+      name:        r.shortName                    as string | undefined,
+      marketState: r.marketState                  as string | undefined,
+    }
+    if (!quote.price) return null
+    setCached(cacheKey, quote)
+    return quote
+  } catch (err) {
+    console.error('[Yahoo] fetchBySymbol failed:', symbol, err)
+    return null
+  }
+}
+
 // ─── fetchHistoricalChart ─────────────────────────────────────────────────────
 // Returns up to 52 weekly closing prices for charting.
 

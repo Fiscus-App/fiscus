@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
-import { fetchQuotes, fetchHistoricalChart, toYahooSymbol } from '@/lib/market/yahoo'
+import { fetchBySymbol, fetchHistoricalChart } from '@/lib/market/yahoo'
 
 // ── Asset profile catalogue ───────────────────────────────────────────────────
 
@@ -40,21 +40,41 @@ function ghostChart(basePrice: number, volatility = 0.015, trend = 0.08): number
   return points
 }
 
-// Map our ticker to a Yahoo Finance symbol
-function assetToYahoo(ticker: string, type: AssetType): string | null {
-  const overrides: Record<string, string> = {
-    GOLD:  'GC=F',
-    OIL:   'CL=F',
-    SILVER:'SI=F',
-    AUD:   'AUDUSD=X',
-    XJO:   '^AXJO',
-    SPX:   '^GSPC',
-    NDX:   '^IXIC',
-    DJI:   '^DJI',
-    RBA:   null as unknown as string,
+// Map our ticker to the correct Yahoo Finance symbol.
+// Uses the profile's exchange to distinguish ASX vs US/global stocks.
+function assetToYahoo(ticker: string, profile: AssetProfile): string | null {
+  // Explicit overrides for non-stock assets
+  const overrides: Record<string, string | null> = {
+    GOLD:   'GC=F',
+    OIL:    'CL=F',
+    SILVER: 'SI=F',
+    COPPER: 'HG=F',
+    AUD:    'AUDUSD=X',
+    XJO:    '^AXJO',
+    SPX:    '^GSPC',
+    NDX:    '^IXIC',
+    DJI:    '^DJI',
+    RBA:    null,   // interest rate — no market symbol
   }
   if (ticker in overrides) return overrides[ticker]
-  if (type === 'STOCK') return toYahooSymbol(ticker) // adds .AX for ASX
+
+  if (profile.type === 'STOCK') {
+    const exchange = profile.exchange?.toUpperCase() ?? ''
+    // ASX-listed stocks need the .AX suffix
+    if (exchange === 'ASX') return `${ticker}.AX`
+    // US stocks (NASDAQ, NYSE, etc.) use ticker as-is
+    if (['NASDAQ', 'NYSE', 'NYSEARCA'].includes(exchange)) return ticker
+    // Default: try as-is (will work for most US stocks)
+    return ticker
+  }
+
+  if (profile.type === 'INDEX') {
+    // Indices without an explicit override — try as-is
+    return ticker
+  }
+
+  if (profile.type === 'FX') return `${ticker}=X`
+
   return null
 }
 
@@ -324,15 +344,14 @@ export async function GET(
   const profile = PROFILES[ticker] ?? buildFallback(ticker)
 
   // ── Fetch real price + chart from Yahoo Finance in parallel ───────────────
-  const yahooSym = assetToYahoo(ticker, profile.type)
+  const yahooSym = assetToYahoo(ticker, profile)
 
-  const [liveQuotes, historicalPoints] = await Promise.all([
-    yahooSym ? fetchQuotes([ticker]).catch(() => new Map()) : Promise.resolve(new Map()),
+  const [liveQuote, historicalPoints] = await Promise.all([
+    yahooSym ? fetchBySymbol(yahooSym).catch(() => null) : Promise.resolve(null),
     yahooSym ? fetchHistoricalChart(yahooSym, '1y').catch(() => []) : Promise.resolve([]),
   ])
 
   // Merge live quote into profile (override ghost price if real data available)
-  const liveQuote = liveQuotes.get(ticker)
   const liveProfile = liveQuote
     ? {
         ...profile,
