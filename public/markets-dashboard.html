@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fiscus · Live Markets Dashboard</title>
+<style>
+  :root{
+    --bg:#080b1a; --bg-2:#111826; --bg-3:#161f30; --line:rgba(255,255,255,.08);
+    --txt:#e9edf6; --muted:#8a93a6; --faint:#5b637a;
+    --gold:#e8b84b; --green:#22d48a; --green-a:rgba(34,212,138,.1); --green-b:rgba(34,212,138,.25);
+    --red:#ff5a5a; --red-a:rgba(255,90,90,.1); --red-b:rgba(255,90,90,.25);
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:20px;min-height:100vh}
+  a{color:inherit}
+  .wrap{max-width:1280px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--gold);box-shadow:0 0 12px var(--gold)}
+  .title{font-size:20px;font-weight:800;letter-spacing:-.01em}
+  .title small{display:block;font-weight:600;font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin-top:2px}
+  .clock{text-align:right;font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.5}
+  .clock b{color:var(--txt)}
+  .ctrls{display:flex;align-items:center;gap:10px}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--bg-3);color:var(--txt);
+    border-radius:12px;padding:9px 13px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  button:active{transform:scale(.96)}
+  button[disabled]{opacity:.5;cursor:default}
+  .countdown{font-family:var(--mono);font-size:11px;color:var(--faint);min-width:96px;text-align:right}
+  .banner{display:flex;gap:9px;align-items:flex-start;border-radius:12px;padding:11px 13px;margin-bottom:16px;font-size:13px;line-height:1.45}
+  .banner.warn{background:rgba(232,184,75,.08);border:1px solid rgba(232,184,75,.22);color:#f3dca0}
+  .banner.info{background:var(--bg-2);border:1px solid var(--line);color:var(--muted)}
+  .banner.err{background:var(--red-a);border:1px solid var(--red-b);color:#ffc9c9}
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+  .card{background:var(--bg-2);border:1px solid var(--line);border-radius:18px;padding:16px}
+  .span4{grid-column:span 4}.span6{grid-column:span 6}.span8{grid-column:span 8}.span12{grid-column:span 12}
+  @media(max-width:900px){.span4,.span6,.span8{grid-column:span 12}}
+  .hd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .hd .bar{width:3px;height:14px;border-radius:2px;background:var(--gold)}
+  .hd h2{margin:0;font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-family:var(--mono)}
+  .hd .ln{flex:1;height:1px;background:var(--line)}
+  .chip{font-family:var(--mono);font-size:9px;padding:3px 7px;border-radius:7px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .chip i{width:5px;height:5px;border-radius:50%;display:inline-block}
+  .chip.live{color:var(--green);background:var(--green-a);border:1px solid var(--green-b)}
+  .chip.live i{background:var(--green)}
+  .chip.delay{color:var(--muted);background:var(--bg-3);border:1px solid var(--line)}
+  .chip.delay i{background:var(--muted)}
+  /* hero */
+  .hero{background:linear-gradient(145deg,#111826,#0a1020);border:1px solid rgba(255,255,255,.08);position:relative;overflow:hidden}
+  .hero .lab{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+  .hero .px{font-family:var(--mono);font-weight:800;font-size:40px;letter-spacing:-.03em;line-height:1}
+  .hero .pts{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px}
+  .rba{display:flex;flex-direction:column;align-items:flex-end;gap:2px;padding:11px 14px;border-radius:14px;background:rgba(232,184,75,.07);border:1px solid rgba(232,184,75,.16)}
+  .rba .l{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .rba .v{font-family:var(--mono);font-size:22px;font-weight:800;color:var(--gold);letter-spacing:-.02em}
+  .rba .s{font-family:var(--mono);font-size:9px;color:var(--faint)}
+  /* tiles */
+  .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .tile{background:var(--bg-3);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .tile .l{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .tile .v{font-family:var(--mono);font-weight:800;font-size:17px;letter-spacing:-.01em;margin-bottom:7px}
+  /* rows */
+  .rows{display:flex;flex-direction:column}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .row .nm{font-size:13px}
+  .row .nm small{display:block;color:var(--muted);font-size:11px}
+  .row .px{font-family:var(--mono);font-weight:700;font-size:13px;display:flex;align-items:center;gap:9px}
+  .badge{font-family:var(--mono);font-size:9px;font-weight:800;width:42px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:8px;letter-spacing:.04em}
+  .pill{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 7px;border-radius:7px;display:inline-flex;align-items:center;gap:3px}
+  .up{color:var(--green);background:var(--green-a);border:1px solid var(--green-b)}
+  .dn{color:var(--red);background:var(--red-a);border:1px solid var(--red-b)}
+  .fl{color:var(--muted);background:var(--bg-3);border:1px solid var(--line)}
+  .na{color:var(--faint);font-family:var(--mono);font-size:11px}
+  .empty{text-align:center;color:var(--muted);font-size:12px;padding:18px 0}
+  .skel{height:64px;border-radius:14px;background:var(--bg-3);animation:p 1.3s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.45}}
+  footer{text-align:center;color:var(--faint);font-family:var(--mono);font-size:10px;margin-top:18px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <div class="title">Fiscus<small>Live Markets Dashboard</small></div>
+    </div>
+    <div class="ctrls">
+      <div class="clock"><b id="clock">—</b><br><span id="updated">Loading…</span></div>
+      <span class="countdown" id="countdown"></span>
+      <button id="refresh" onclick="load(true)">↻ Refresh</button>
+    </div>
+  </header>
+
+  <div id="banners"></div>
+  <div id="root" class="grid">
+    <div class="card hero span12"><div class="skel" style="height:96px"></div></div>
+    <div class="card span6"><div class="skel"></div></div>
+    <div class="card span6"><div class="skel"></div></div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+// ── Config ───────────────────────────────────────────────────────────────────
+// Same-origin by default (this file is served from the Fiscus app's /public).
+// To run it standalone (open the file directly), set API_BASE to your deploy,
+// e.g. "https://fiscus-peach.vercel.app". The summary route already sends
+// Access-Control-Allow-Origin:* so cross-origin reads work.
+const API_BASE = "";
+const REFRESH_MS = 60000;
+
+// ── State ────────────────────────────────────────────────────────────────────
+let last = null;          // last good payload (kept on error so the board never blanks)
+let nextAt = Date.now() + REFRESH_MS;
+let busy = false;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const fmt = (v, d = 2) =>
+  (v === null || v === undefined || Number.isNaN(v))
+    ? null
+    : Number(v).toLocaleString("en-AU", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function pill(change) {
+  if (change === null || change === undefined) return '<span class="na">—</span>';
+  const c = Number(change);
+  const cls = c > 0 ? "up" : c < 0 ? "dn" : "fl";
+  const arrow = c > 0 ? "▲" : c < 0 ? "▼" : "▬";
+  return `<span class="pill ${cls}">${arrow} ${(c >= 0 ? "+" : "")}${c.toFixed(2)}%</span>`;
+}
+
+// Source chip — reads row.source, else meta.sources[section], else infers.
+function srcChip(source) {
+  if (!source || source === "none") return "";
+  const live = source === "twelvedata";
+  const label =
+    source === "twelvedata" ? "Live · Twelve Data" :
+    source === "stooq"      ? "Delayed · Stooq" :
+    source === "frankfurter"? "Daily · ECB" : source;
+  return `<span class="chip ${live ? "live" : "delay"}"><i></i>${label}</span>`;
+}
+const sectionSource = (rows, metaSrc) =>
+  (rows.find((r) => r && r.source && r.source !== "none") || {}).source || metaSrc || "";
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render(d) {
+  const meta = d.meta || {};
+  const S = meta.sources || {};
+
+  // Banners
+  const b = [];
+  if (meta.tdRateLimited) b.push(`<div class="banner warn">⚠ Live FX &amp; commodity prices are rate-limited on the Twelve Data free tier right now — showing reference rates where available.</div>`);
+  if (meta.tdKeyPresent === false) b.push(`<div class="banner info">ℹ Twelve Data key not configured — showing ECB &amp; exchange reference data. Set <code>TWELVE_DATA_API_KEY</code> for live pricing.</div>`);
+  if (meta.hasAnyLive === false) b.push(`<div class="banner warn">⚠ All market data sources are temporarily unreachable. Retrying automatically.</div>`);
+  $("banners").innerHTML = b.join("");
+
+  const indices = d.indices || [];
+  const fx = d.fx || [];
+  const commodities = d.commodities || [];
+  const movers = d.topMovers || [];
+  const asx = d.asx;
+
+  const idxSrc = sectionSource(indices, S.indices);
+  const fxSrc  = sectionSource(fx, S.fx);
+  const cmdSrc = sectionSource(commodities, S.commodities);
+  const stkSrc = sectionSource(movers, S.stocks);
+
+  // Hero
+  const asxUp = (asx && asx.change >= 0);
+  const hero = `
+    <div class="card hero span12">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div>
+          <div class="lab">S&amp;P / ASX 200 Index</div>
+          ${asx ? `
+            <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+              <span class="px">${fmt(asx.price, 1) ?? "—"}</span>
+              ${pill(asx.change)}
+              ${srcChip(idxSrc)}
+            </div>
+            <div class="pts">${asxUp ? "▲" : "▼"} ${fmt(Math.abs(asx.changeAbs || 0), 1) ?? "0.0"} pts</div>
+          ` : `<div class="na" style="margin-top:8px">No data available</div>`}
+        </div>
+        <div class="rba">
+          <div class="l">RBA Rate</div>
+          <div class="v">4.35%</div>
+          <div class="s">since 6 May 2026</div>
+        </div>
+      </div>
+    </div>`;
+
+  // Indices tiles
+  const idxBody = indices.some((i) => i.value !== null)
+    ? `<div class="tiles">${indices.map((i) => `
+        <div class="tile">
+          <div class="l">${i.name}</div>
+          <div class="v">${fmt(i.value, i.name === "Nikkei" ? 0 : 1) ?? "—"}</div>
+          ${pill(i.change)}
+        </div>`).join("")}</div>`
+    : `<div class="empty">Index data unavailable</div>`;
+
+  // FX tiles
+  const fxBody = fx.some((f) => f.value !== null)
+    ? `<div class="tiles">${fx.map((f) => `
+        <div class="tile">
+          <div class="l">${f.pair}</div>
+          <div class="v">${fmt(f.value, f.pair.includes("JPY") ? 3 : 4) ?? "—"}</div>
+          ${pill(f.change)}
+        </div>`).join("")}</div>`
+    : `<div class="empty">FX data unavailable</div>`;
+
+  // Commodities rows
+  const cmdBody = commodities.some((c) => c.value !== null)
+    ? `<div class="rows">${commodities.map((c) => `
+        <div class="row">
+          <div class="nm">${c.name}</div>
+          <div class="px">${c.value !== null ? "$" + fmt(c.value) + ' <small style="color:var(--muted)">' + (c.unit||"") + "</small>" : '<span class="na">—</span>'} ${pill(c.change)}</div>
+        </div>`).join("")}</div>`
+    : `<div class="empty">Commodity data unavailable</div>`;
+
+  // ASX stocks rows
+  const stkBody = movers.some((m) => m.price !== null)
+    ? `<div class="rows">${movers.map((m) => {
+        const up = (m.change || 0) >= 0;
+        return `<div class="row">
+          <div style="display:flex;align-items:center;gap:11px">
+            <div class="badge" style="color:${up ? "var(--green)" : "var(--red)"};background:${up ? "var(--green-a)" : "var(--red-a)"};border:1px solid ${up ? "var(--green-b)" : "var(--red-b)"}">${m.ticker}</div>
+            <div class="nm">${m.name || m.ticker}</div>
+          </div>
+          <div class="px">${m.price !== null ? "$" + fmt(m.price) : '<span class="na">—</span>'} ${pill(m.change)}</div>
+        </div>`;
+      }).join("")}</div>`
+    : `<div class="empty">ASX stock data unavailable</div>`;
+
+  $("root").innerHTML =
+    hero +
+    `<div class="card span6"><div class="hd"><span class="bar"></span><h2>Global Indices</h2><span class="ln"></span>${srcChip(idxSrc)}</div>${idxBody}</div>` +
+    `<div class="card span6"><div class="hd"><span class="bar"></span><h2>Foreign Exchange</h2><span class="ln"></span>${srcChip(fxSrc)}</div>${fxBody}</div>` +
+    `<div class="card span6"><div class="hd"><span class="bar"></span><h2>Commodities</h2><span class="ln"></span>${srcChip(cmdSrc)}</div>${cmdBody}</div>` +
+    `<div class="card span6"><div class="hd"><span class="bar"></span><h2>ASX Top Stocks</h2><span class="ln"></span>${srcChip(stkSrc)}</div>${stkBody}</div>`;
+
+  const when = meta.fetchedAt ? new Date(meta.fetchedAt) : new Date();
+  $("foot").innerHTML =
+    (meta.hasAnyLive === false
+      ? "Market data unavailable"
+      : "FX &amp; commodities: Twelve Data · indices &amp; ASX stocks: Stooq (delayed)") +
+    `<br>As at ${when.toLocaleString("en-AU", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })} · Not financial advice`;
+}
+
+// ── Fetch loop ───────────────────────────────────────────────────────────────
+async function load(manual) {
+  if (busy) return;
+  busy = true;
+  const btn = $("refresh");
+  btn.disabled = true; btn.textContent = "↻ …";
+  try {
+    const res = await fetch(API_BASE + "/api/market/summary", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    last = data;
+    render(data);
+    $("updated").textContent = "Updated " + new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  } catch (e) {
+    if (last) {
+      $("updated").innerHTML = '<span style="color:var(--red)">Refresh failed — showing last update</span>';
+    } else {
+      $("banners").innerHTML = `<div class="banner err">⚠ Could not reach the market API at <code>${API_BASE || "this origin"}/api/market/summary</code>. ${API_BASE ? "Check the deploy is live." : "Open this from the deployed app, or set API_BASE."}</div>`;
+      $("root").innerHTML = "";
+    }
+  } finally {
+    busy = false;
+    btn.disabled = false; btn.textContent = "↻ Refresh";
+    nextAt = Date.now() + REFRESH_MS;
+  }
+}
+
+// ── Ticking clock + countdown ────────────────────────────────────────────────
+setInterval(() => {
+  $("clock").textContent = new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const left = Math.max(0, Math.round((nextAt - Date.now()) / 1000));
+  $("countdown").textContent = "next refresh " + left + "s";
+  if (left <= 0 && !busy) load(false);
+}, 1000);
+
+load(false);
+</script>
+</body>
+</html>

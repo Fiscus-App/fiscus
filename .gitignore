@@ -1,5 +1,11 @@
 node_modules/
 
+# Next.js build output / generated
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
 # Environment variables
 .env
 .env.local

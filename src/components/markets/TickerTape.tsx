@@ -17,7 +17,7 @@ const LOADING_ITEMS: TickerItem[] = [
   { label: 'BHP',      value: '···', change: null },
   { label: 'RIO',      value: '···', change: null },
   { label: 'AUD/JPY',  value: '···', change: null },
-  { label: 'RBA Rate', value: '4.10%', change: null },
+  { label: 'RBA Rate', value: '4.35%', change: null },
 ]
 
 function fmt(n: number | null, decimals = 2): string {
@@ -145,8 +145,8 @@ function buildItems(d: SummaryResponse): TickerItem[] {
     }
   }
 
-  // RBA cash rate (always shown — static until RBA changes it)
-  items.push({ label: 'RBA Rate', value: '4.10%', change: null })
+  // RBA cash rate — static reference (4.35% effective 6 May 2026); no free live feed
+  items.push({ label: 'RBA Rate', value: '4.35%', change: null })
 
   return items.length >= 3 ? items : LOADING_ITEMS
 }
