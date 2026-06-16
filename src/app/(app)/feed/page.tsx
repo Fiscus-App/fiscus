@@ -129,7 +129,7 @@ const MOCK_FEED: FeedItem[] = [
   },
 ]
 
-const TABS = ['For You', 'Following', 'Markets', 'ASX']
+const TABS = ['Market News', 'Following']
 
 export default function FeedPage() {
   const router = useRouter()
