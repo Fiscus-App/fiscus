@@ -130,6 +130,7 @@ const MOCK_FEED: FeedItem[] = [
 ]
 
 const TABS = ['Market News', 'Following']
+const TAB_H = 48 // dedicated height for the feed tab bar, so cards sit below it
 
 export default function FeedPage() {
   const router = useRouter()
@@ -139,9 +140,9 @@ export default function FeedPage() {
   const [refreshing, setRefreshing] = useState(false)
   const intervalRef                 = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Full viewport height minus header (58) and nav (70).
+  // Viewport height minus header (58), nav (70) and the feed tab bar.
   useEffect(() => {
-    const update = () => setCardHeight(window.innerHeight - 58 - 70)
+    const update = () => setCardHeight(window.innerHeight - 58 - 70 - TAB_H)
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
@@ -207,12 +208,16 @@ export default function FeedPage() {
   if (cardHeight === 0) return null
 
   return (
-    <div className="relative h-full" style={{ background: '#07091a' }}>
+    <div className="relative h-full flex flex-col" style={{ background: '#07091a' }}>
 
-      {/* ── Feed tabs ─────────────────────────────────────────────────── */}
+      {/* ── Feed tab bar (own row — sits above the cards, never over them) ─ */}
       <div
-        className="absolute flex items-center justify-center gap-1 z-20"
-        style={{ top: 10, left: 0, right: 0, paddingLeft: 8, paddingRight: 8 }}
+        className="flex-shrink-0 relative flex items-center justify-center gap-1 z-20"
+        style={{
+          height: TAB_H,
+          background: '#07091a',
+          borderBottom: '1px solid var(--line)',
+        }}
       >
         {TABS.map((label, i) => (
           <button
@@ -221,17 +226,11 @@ export default function FeedPage() {
               if (label === 'Following') { router.push('/following'); return }
               setTab(i)
             }}
-            className="relative font-sans font-semibold text-[13px] px-3 py-1 rounded-full bg-transparent border-none cursor-pointer transition-all"
+            className="relative font-sans font-semibold text-[13px] px-3.5 py-1.5 rounded-full bg-transparent cursor-pointer transition-all"
             style={{
               color: tab === i ? '#fff' : 'rgba(255,255,255,0.42)',
-              background: tab === i
-                ? 'rgba(232,184,75,0.14)'
-                : 'transparent',
-              border: tab === i
-                ? '1px solid rgba(232,184,75,0.28)'
-                : '1px solid transparent',
-              backdropFilter: tab === i ? 'blur(8px)' : 'none',
-              textShadow: '0 1px 8px rgba(0,0,0,0.7)',
+              background: tab === i ? 'rgba(232,184,75,0.14)' : 'transparent',
+              border: tab === i ? '1px solid rgba(232,184,75,0.28)' : '1px solid transparent',
               transition: 'all 0.2s ease',
             }}
           >
@@ -239,13 +238,13 @@ export default function FeedPage() {
           </button>
         ))}
         {refreshing && (
-          <RefreshCw size={11} className="animate-spin absolute right-4"
+          <RefreshCw size={12} className="animate-spin absolute right-4"
             style={{ color: 'rgba(255,255,255,0.35)' }} />
         )}
       </div>
 
-      {/* ── Snap-scroll feed ──────────────────────────────────────────── */}
-      <div className="feed-scroll h-full">
+      {/* ── Snap-scroll feed (starts cleanly below the tab bar) ───────────── */}
+      <div className="feed-scroll" style={{ height: cardHeight }}>
         {items.map((item) => (
           <div key={item.id} className="feed-item" style={{ height: cardHeight }}>
             <VideoCard
