@@ -9,8 +9,8 @@ interface TickerItem {
 }
 
 const LOADING_ITEMS: TickerItem[] = [
-  { label: 'ASX 200',  value: '···', change: null },
-  { label: 'S&P 500',  value: '···', change: null },
+  { label: 'AUD/USD',  value: '···', change: null },
+  { label: 'Gold',     value: '···', change: null },
   { label: 'AUD/USD',  value: '···', change: null },
   { label: 'Gold',     value: '···', change: null },
   { label: 'CBA',      value: '···', change: null },
@@ -109,10 +109,7 @@ interface StocksResponse {
 function buildItems(d: SummaryResponse): TickerItem[] {
   const items: TickerItem[] = []
 
-  // ASX 200 hero price
-  if (d.asx?.price) {
-    items.push({ label: 'ASX 200', value: fmt(d.asx.price, 1), change: d.asx.change ?? null })
-  }
+  // AUD/USD is shown via the FX loop below — no separate hero item.
 
   // Other global indices (skip ASX 200 — already added above)
   for (const idx of d.indices ?? []) {

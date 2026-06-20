@@ -1,6 +1,7 @@
 'use client'
 
 import { useSession, signOut } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { useEffect, useState, useCallback } from 'react'
 import {
   Bell, Shield, HelpCircle, LogOut, ChevronRight,
@@ -18,10 +19,10 @@ import {
 interface Stats { saves: number; insightfuls: number; watches: number }
 
 const SETTINGS_ROWS = [
-  { label: 'Notifications',      sub: 'Alerts, briefings & updates',  icon: Bell       },
-  { label: 'Preferences',        sub: 'Feed topics, sectors & style', icon: Settings   },
-  { label: 'Privacy & Security', sub: 'Account and data settings',    icon: Shield     },
-  { label: 'Help & Support',     sub: 'FAQs, docs and contact',       icon: HelpCircle },
+  { label: 'Notifications',      sub: 'Alerts, briefings & updates',  icon: Bell,       href: '/settings/notifications' },
+  { label: 'Preferences',        sub: 'Feed topics, sectors & style', icon: Settings,   href: '/settings/preferences'   },
+  { label: 'Privacy & Security', sub: 'Account and data settings',    icon: Shield,     href: '/settings/privacy'       },
+  { label: 'Help & Support',     sub: 'FAQs, docs and contact',       icon: HelpCircle, href: '/settings/help'          },
 ]
 
 const TIER_LABELS: Record<string, string> = {
@@ -280,11 +281,18 @@ function FollowingTab() {
 
 export default function ProfilePage() {
   const { data: session, update: updateSession } = useSession()
+  const router = useRouter()
   const [stats, setStats]         = useState<Stats | null>(null)
   const [editing, setEditing]     = useState(false)
   const [nameInput, setNameInput] = useState('')
   const [saving, setSaving]       = useState(false)
   const [profileTab, setProfileTab] = useState<'overview' | 'following'>('overview')
+
+  // Allow deep-linking straight to the Following tab (e.g. from Preferences).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('tab') === 'following') setProfileTab('following')
+  }, [])
 
   const name    = session?.user?.name  ?? 'Guest'
   const email   = session?.user?.email ?? ''
@@ -507,9 +515,10 @@ export default function ProfilePage() {
                 <div className="flex-1 h-px" style={{ background: 'var(--line)' }} />
               </div>
               <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-                {SETTINGS_ROWS.map(({ label, sub, icon: Icon }, i) => (
+                {SETTINGS_ROWS.map(({ label, sub, icon: Icon, href }, i) => (
                   <button
                     key={label}
+                    onClick={() => router.push(href)}
                     className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
                     style={{
                       background: 'var(--bg-2)',

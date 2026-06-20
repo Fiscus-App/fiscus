@@ -1,16 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
 import { TrendingUp, TrendingDown, Minus, RefreshCw, AlertTriangle } from 'lucide-react'
 import type { MarketSource, MarketSummaryResponse } from '@/lib/market/types'
 import { sourceLabel, freshnessLabel } from '@/lib/market/types'
 
 // ─── Static reference (not market data) ──────────────────────────────────────
-// RBA cash rate is a policy figure with no free live feed. Shown as a clearly
-// labelled static reference with its effective date — never as "live" data.
-// Source: https://www.rba.gov.au/statistics/cash-rate/  (effective 6 May 2026)
+// RBA cash rate — policy figure with no free live feed; labelled static value.
+// Source: rba.gov.au (effective 6 May 2026).
 const RBA_RATE = '4.35%'
 const RBA_SINCE = 'since 6 May 2026'
 
@@ -37,7 +35,6 @@ function ChangeChip({ change }: { change: number | null }) {
   )
 }
 
-/** Provenance + freshness chip (Live · Twelve Data / Delayed · Stooq / Daily · ECB). */
 function SourceChip({ source }: { source: MarketSource | undefined }) {
   if (!source || source === 'none') return null
   const live   = source === 'twelvedata'
@@ -93,32 +90,39 @@ function EmptyRow({ label }: { label: string }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MarketsPage() {
-  const router = useRouter()
   const [data,    setData]    = useState<MarketSummaryResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   function load() {
     setLoading(true); setError(false)
     fetch('/api/market/summary', { cache: 'no-store' })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then((d: MarketSummaryResponse) => setData(d))
+      .then((d: MarketSummaryResponse) => {
+        // Keep the last good payload if a refresh returns empty/rate-limited, so a
+        // transient Twelve Data blip never blanks an already-populated page.
+        setData(prev => (!d.meta?.hasAnyLive && prev?.meta?.hasAnyLive) ? prev : d)
+        if (!d.meta?.hasAnyLive) {
+          clearTimeout(retryTimer.current)
+          retryTimer.current = setTimeout(load, 20000)
+        }
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
     load()
-    const id = setInterval(load, 5 * 60 * 1000) // auto-refresh every 5 min
-    return () => clearInterval(id)
+    const id = setInterval(load, 5 * 60 * 1000)
+    return () => { clearInterval(id); clearTimeout(retryTimer.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const meta    = data?.meta
-  const live    = meta?.hasAnyLive ?? false
-  const asx     = data?.asx
-  const asxUp   = (asx?.change ?? 0) >= 0
-  const gainers = (data?.topMovers ?? []).filter(m => (m.change ?? 0) > 0).sort((a, b) => (b.change ?? 0) - (a.change ?? 0))
-  const fallers = (data?.topMovers ?? []).filter(m => (m.change ?? 0) < 0).sort((a, b) => (a.change ?? 0) - (b.change ?? 0))
+  const meta  = data?.meta
+  const live  = meta?.hasAnyLive ?? false
+  const aud   = data?.asx
+  const audUp = (aud?.change ?? 0) >= 0
 
   const updatedLabel = loading && !data
     ? 'Loading market data…'
@@ -126,7 +130,6 @@ export default function MarketsPage() {
       ? `Updated ${new Date(meta.fetchedAt).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`
       : 'Data temporarily unavailable'
 
-  // Hard failure (route unreachable / non-2xx)
   if (error && !data) return (
     <div className="h-full flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg)' }}>
       <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Could not load market data</p>
@@ -157,21 +160,20 @@ export default function MarketsPage() {
         {/* ── Status banners ─────────────────────────────────── */}
         {meta?.tdRateLimited && (
           <Notice tone="warn">
-            Live FX &amp; commodity prices are rate-limited on the Twelve Data free tier right now.
-            Showing reference rates where available; they&apos;ll refresh automatically.
+            Live prices are briefly rate-limited on the Twelve Data free tier. Showing the last values where
+            available; they refresh automatically.
           </Notice>
         )}
         {meta && !meta.tdKeyPresent && (
           <Notice tone="info">
-            Live FX &amp; commodity feed (Twelve Data) isn&apos;t configured. Showing ECB and exchange
-            reference data. Set <span className="font-mono">TWELVE_DATA_API_KEY</span> to enable live pricing.
+            Live commodity/crypto feed (Twelve Data) isn&apos;t configured. Set <span className="font-mono">TWELVE_DATA_API_KEY</span> to enable it.
           </Notice>
         )}
         {!loading && data && !live && (
-          <Notice tone="warn">All market data sources are temporarily unreachable. Tap refresh to try again.</Notice>
+          <Notice tone="warn">Market data sources are temporarily unreachable. Tap refresh to try again.</Notice>
         )}
 
-        {/* ── ASX 200 Hero ─────────────────────────────────────────── */}
+        {/* ── Hero: AUD/USD ────────────────────────────────────── */}
         <div className="rounded-2xl overflow-hidden relative"
           style={{
             background: 'linear-gradient(145deg, #111826 0%, #0a1020 100%)',
@@ -179,23 +181,23 @@ export default function MarketsPage() {
             boxShadow: '0 4px 32px rgba(0,0,0,0.4)',
           }}>
           <div className="absolute inset-0 pointer-events-none"
-            style={{ background: `radial-gradient(ellipse 100% 70% at 20% 0%, ${asxUp ? 'rgba(34,212,138,0.06)' : 'rgba(255,79,79,0.06)'} 0%, transparent 60%)` }} />
+            style={{ background: `radial-gradient(ellipse 100% 70% at 20% 0%, ${audUp ? 'rgba(34,212,138,0.06)' : 'rgba(255,79,79,0.06)'} 0%, transparent 60%)` }} />
           <div className="relative p-5">
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-[9px] font-mono font-bold tracking-[0.20em] uppercase mb-2"
-                  style={{ color: 'var(--text-muted)' }}>S&amp;P / ASX 200 INDEX</div>
-                {loading && !data ? <Skel h={36} cls="rounded-lg w-44" /> : asx ? (
+                  style={{ color: 'var(--text-muted)' }}>AUD / USD</div>
+                {loading && !data ? <Skel h={36} cls="rounded-lg w-44" /> : aud ? (
                   <>
                     <div className="flex items-baseline gap-3 mb-1 flex-wrap">
                       <span className="font-mono font-bold" style={{ fontSize: 32, letterSpacing: '-0.03em' }}>
-                        {n(asx.price, 1)}
+                        {n(aud.price, 4)}
                       </span>
-                      <ChangeChip change={asx.change} />
-                      <SourceChip source={meta?.sources.indices} />
+                      <ChangeChip change={aud.change} />
+                      <SourceChip source={meta?.sources.fx} />
                     </div>
                     <div className="font-mono text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                      {asxUp ? '▲' : '▼'} {n(Math.abs(asx.changeAbs ?? 0), 1)} pts
+                      Australian Dollar · ECB reference rate
                     </div>
                   </>
                 ) : (
@@ -210,114 +212,6 @@ export default function MarketsPage() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* ── Global Indices ────────────────────────────────── */}
-        <div>
-          <Hd title="Global Indices" right={<SourceChip source={meta?.sources.indices} />} />
-          {loading && !data ? (
-            <div className="grid grid-cols-2 gap-2">{[1,2,3,4].map(i => <Skel key={i} h={76} cls="rounded-2xl" />)}</div>
-          ) : (data?.indices ?? []).some(i => i.value !== null) ? (
-            <div className="grid grid-cols-2 gap-2">
-              {(data?.indices ?? []).map(idx => (
-                <div key={idx.name} className="rounded-2xl p-3.5"
-                  style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
-                  <div className="text-[9px] font-mono tracking-[0.14em] uppercase mb-2"
-                    style={{ color: 'var(--text-muted)' }}>{idx.name}</div>
-                  <div className="font-mono font-bold text-[16px] mb-1.5" style={{ letterSpacing: '-0.01em' }}>
-                    {n(idx.value, idx.name === 'Nikkei' ? 0 : 1)}
-                  </div>
-                  <ChangeChip change={idx.change} />
-                </div>
-              ))}
-            </div>
-          ) : <EmptyRow label="Index data" />}
-        </div>
-
-        {/* ── Today's Gainers ───────────────────────────────── */}
-        {(( loading && !data) || gainers.length > 0) && (
-          <div>
-            <Hd title="Today's Top Gainers" right={<SourceChip source={meta?.sources.stocks} />} />
-            {loading && !data ? <Skel h={200} cls="rounded-2xl" /> : (
-              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-                {gainers.map((m, i) => (
-                  <button key={m.ticker} onClick={() => router.push(`/asset/${m.ticker}`)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                    style={{ background: 'var(--bg-2)', borderBottom: i < gainers.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                    <span className="font-mono text-[10px] w-4 text-right flex-shrink-0" style={{ color: 'var(--text-faint)' }}>{i + 1}</span>
-                    <div className="flex items-center justify-center rounded-xl flex-shrink-0"
-                      style={{ width: 38, height: 38, background: 'var(--green-a)', border: '1px solid var(--green-b)' }}>
-                      <span className="font-mono font-bold text-[9px]" style={{ color: 'var(--green)' }}>{m.ticker}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-[13px]">{m.ticker}</div>
-                      <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{m.name}</div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="font-mono font-bold text-[13px]">{m.price !== null ? `$${n(m.price)}` : '—'}</div>
-                      <div className="font-mono font-bold text-[11px]" style={{ color: 'var(--green)' }}>
-                        ▲ {(m.change ?? 0).toFixed(2)}%
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Today's Fallers ───────────────────────────────── */}
-        {(( loading && !data) || fallers.length > 0) && (
-          <div>
-            <Hd title="Today's Top Fallers" right={<SourceChip source={meta?.sources.stocks} />} />
-            {loading && !data ? <Skel h={200} cls="rounded-2xl" /> : (
-              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-                {fallers.map((m, i) => (
-                  <button key={m.ticker} onClick={() => router.push(`/asset/${m.ticker}`)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                    style={{ background: 'var(--bg-2)', borderBottom: i < fallers.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                    <span className="font-mono text-[10px] w-4 text-right flex-shrink-0" style={{ color: 'var(--text-faint)' }}>{i + 1}</span>
-                    <div className="flex items-center justify-center rounded-xl flex-shrink-0"
-                      style={{ width: 38, height: 38, background: 'var(--red-a)', border: '1px solid var(--red-b)' }}>
-                      <span className="font-mono font-bold text-[9px]" style={{ color: 'var(--red)' }}>{m.ticker}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-[13px]">{m.ticker}</div>
-                      <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{m.name}</div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="font-mono font-bold text-[13px]">{m.price !== null ? `$${n(m.price)}` : '—'}</div>
-                      <div className="font-mono font-bold text-[11px]" style={{ color: 'var(--red)' }}>
-                        ▼ {Math.abs(m.change ?? 0).toFixed(2)}%
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Commodities ───────────────────────────────────── */}
-        <div>
-          <Hd title="Commodities" right={<SourceChip source={meta?.sources.commodities} />} />
-          {loading && !data ? <Skel h={160} cls="rounded-2xl" /> : (data?.commodities ?? []).some(c => c.value !== null) ? (
-            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-              {(data?.commodities ?? []).map((c, i, arr) => (
-                <div key={c.name} className="flex items-center justify-between px-4 py-3"
-                  style={{ background: 'var(--bg-2)', borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                  <span className="text-[13px] font-semibold">{c.name}</span>
-                  <div className="flex items-center gap-2.5">
-                    <span className="font-mono font-bold text-[13px]">
-                      {c.value !== null ? `$${n(c.value)}` : '—'}
-                      {c.value !== null && <span className="text-[10px] font-normal ml-0.5" style={{ color: 'var(--text-muted)' }}>{c.unit}</span>}
-                    </span>
-                    <ChangeChip change={c.change} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : <EmptyRow label="Commodity data" />}
         </div>
 
         {/* ── Foreign Exchange ──────────────────────────────── */}
@@ -342,43 +236,55 @@ export default function MarketsPage() {
           ) : <EmptyRow label="FX data" />}
         </div>
 
-        {/* ── ASX Top Stocks ────────────────────────────────── */}
-        {(( loading && !data) || (data?.topMovers ?? []).some(m => m.price !== null)) && (
-          <div>
-            <Hd title="ASX Top Stocks" right={<SourceChip source={meta?.sources.stocks} />} />
-            {loading && !data ? <Skel h={280} cls="rounded-2xl" /> : (
-              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-                {(data?.topMovers ?? []).map((m, i, arr) => (
-                  <button key={m.ticker} onClick={() => router.push(`/asset/${m.ticker}`)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                    style={{ background: 'var(--bg-2)', borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none' }}>
-                    <div className="flex items-center justify-center font-mono text-[10px] font-bold rounded-lg flex-shrink-0"
-                      style={{
-                        width: 40, height: 28,
-                        background: (m.change ?? 0) >= 0 ? 'var(--green-a)' : 'var(--red-a)',
-                        border: `1px solid ${(m.change ?? 0) >= 0 ? 'var(--green-b)' : 'var(--red-b)'}`,
-                        color: (m.change ?? 0) >= 0 ? 'var(--green)' : 'var(--red)',
-                        letterSpacing: '0.04em',
-                      }}>
-                      {m.ticker}
-                    </div>
-                    <span className="flex-1 text-[12px] truncate" style={{ color: 'var(--text-secondary)' }}>{m.name}</span>
-                    <div className="flex items-center gap-2.5 flex-shrink-0">
-                      <span className="font-mono font-bold text-[13px]">{m.price !== null ? `$${n(m.price)}` : '—'}</span>
-                      <ChangeChip change={m.change} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {/* ── Commodities ───────────────────────────────────── */}
+        <div>
+          <Hd title="Commodities" right={<SourceChip source={meta?.sources.commodities} />} />
+          {loading && !data ? <Skel h={160} cls="rounded-2xl" /> : (data?.commodities ?? []).some(c => c.value !== null) ? (
+            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+              {(data?.commodities ?? []).map((c, i, arr) => (
+                <div key={c.name} className="flex items-center justify-between px-4 py-3"
+                  style={{ background: 'var(--bg-2)', borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                  <span className="text-[13px] font-semibold">{c.name}</span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-mono font-bold text-[13px]">
+                      {c.value !== null ? `$${n(c.value)}` : '—'}
+                      {c.value !== null && <span className="text-[10px] font-normal ml-0.5" style={{ color: 'var(--text-muted)' }}>{c.unit} USD</span>}
+                    </span>
+                    <ChangeChip change={c.change} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyRow label="Commodity data" />}
+        </div>
+
+        {/* ── Crypto ────────────────────────────────────────── */}
+        <div>
+          <Hd title="Crypto · USD" right={<SourceChip source={meta?.sources.crypto} />} />
+          {loading && !data ? <Skel h={160} cls="rounded-2xl" /> : (data?.crypto ?? []).some(c => c.price !== null) ? (
+            <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+              {(data?.crypto ?? []).map((c, i, arr) => (
+                <div key={c.symbol} className="flex items-center justify-between px-4 py-3"
+                  style={{ background: 'var(--bg-2)', borderBottom: i < arr.length - 1 ? '1px solid var(--line)' : 'none' }}>
+                  <div>
+                    <div className="text-[13px] font-semibold">{c.name}</div>
+                    <div className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{c.symbol}</div>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-mono font-bold text-[13px]">{c.price !== null ? `$${n(c.price, c.price < 10 ? 4 : 2)}` : '—'}</span>
+                    <ChangeChip change={c.change} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <EmptyRow label="Crypto data" />}
+        </div>
 
         {/* ── Footer ───────────────────────────────────────── */}
         <div className="text-center pb-4 space-y-1">
           <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'var(--text-faint)' }}>
             {live
-              ? <>FX &amp; commodities: Twelve Data · indices &amp; ASX stocks: Stooq (delayed)</>
+              ? <>FX: ECB reference · commodities &amp; crypto: Twelve Data (USD)</>
               : 'Market data unavailable'}
           </p>
           <p className="text-[10px] font-mono" style={{ color: 'var(--text-faint)' }}>

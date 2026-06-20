@@ -22,6 +22,13 @@ model User {
   verificationTokenExpiry DateTime?
   resetToken              String?   @unique
   resetTokenExpiry        DateTime?
+
+  // ─── Two-factor authentication (TOTP) ───────────────────────────────
+  twoFactorEnabled        Boolean   @default(false)
+  twoFactorSecret         String?   // base32 secret, set once 2FA is verified+enabled
+  twoFactorPending        String?   // base32 secret held during setup, before verification
+  twoFactorBackupCodes    String?   // JSON array of bcrypt-hashed single-use backup codes
+
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 

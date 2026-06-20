@@ -1,174 +1,124 @@
 /**
  * GET /api/market/summary  —  Edge Runtime
  *
- * Single source of truth for the Markets page + ticker tape. Composes three
- * upstream providers, each used only where it actually works:
+ * Shows ONLY data we can display correctly and for free from Vercel:
  *
- *   FX            Twelve Data (real % change)  →  Frankfurter (ECB rate, no change)
- *   Commodities   Twelve Data (XAU/XAG/WTI)    →  Stooq CSV
- *   Indices       Stooq CSV                    (TD free tier can't serve indices)
- *   ASX stocks    Stooq CSV                    (TD free tier can't serve ASX equities)
+ *   AUD FX       Frankfurter (ECB)    — correct, unlimited, with daily % change
+ *   Commodities  Twelve Data          — XAU/XAG/WTI vs USD (real spot)
+ *   Crypto       Twelve Data          — BTC/ETH/SOL vs USD (free tier)
  *
- * Edge runtime is used because Stooq/Frankfurter are reliable from Cloudflare
- * edge IPs (unlike AWS Lambda IPs). The Twelve Data API key is read server-side
- * only (process.env.TWELVE_DATA_API_KEY) and never reaches the client.
+ * Deliberately NOT shown: ASX-listed share prices and stock-index *levels* —
+ * no free source serves those correctly from a datacenter (Stooq/Yahoo are
+ * IP-blocked; Twelve Data's free tier excludes them; US ETF/ADR "proxies" show
+ * different numbers in USD and were misleading). Those require paid ASX/index
+ * market-data licensing — see docs/MARKETS_DATA.md.
  *
- * The response is a typed, backward-compatible superset of the old shape: every
- * field the page/ticker previously read is still present; we add per-row
- * `source` provenance and richer `meta`. Partial upstream failures degrade
- * gracefully (null values + honest source labels) — the route never throws a
- * 500 for missing data and never presents stale/fallback data as "live".
+ * Twelve Data load = 6 symbols/refresh, cached 20 min → well inside the free
+ * 8/min + 800/day limits. The API key is read server-side only.
  */
 
 export const runtime = 'edge'
 
 import { NextResponse } from 'next/server'
 import { fetchTwelveDataQuotes } from '@/lib/market/twelvedata'
-import { fetchStooqQuotes } from '@/lib/market/stooq'
-import { fetchAUDRates } from '@/lib/market/frankfurter'
+import { fetchAUDFx } from '@/lib/market/frankfurter'
 import type {
-  MarketSource,
   MarketSummaryResponse,
-  IndexRow,
   CommodityRow,
   FXRow,
-  MoverRow,
+  CryptoRow,
 } from '@/lib/market/types'
 
-// ─── Catalogue ───────────────────────────────────────────────────────────────
+const COMMODITIES = [
+  { name: 'Gold',    unit: '/oz',  td: 'XAU/USD' },
+  { name: 'Silver',  unit: '/oz',  td: 'XAG/USD' },
+  { name: 'WTI Oil', unit: '/bbl', td: 'WTI/USD' },
+] as const
+
+const CRYPTO = [
+  { symbol: 'BTC/USD', name: 'Bitcoin',  td: 'BTC/USD' },
+  { symbol: 'ETH/USD', name: 'Ethereum', td: 'ETH/USD' },
+  { symbol: 'SOL/USD', name: 'Solana',   td: 'SOL/USD' },
+] as const
 
 const FX_PAIRS = [
-  { pair: 'AUD/USD', td: 'AUD/USD', ff: 'USD' },
-  { pair: 'AUD/CNY', td: 'AUD/CNY', ff: 'CNY' },
-  { pair: 'AUD/JPY', td: 'AUD/JPY', ff: 'JPY' },
-  { pair: 'AUD/EUR', td: 'AUD/EUR', ff: 'EUR' },
+  { pair: 'AUD/USD', ff: 'USD' },
+  { pair: 'AUD/CNY', ff: 'CNY' },
+  { pair: 'AUD/JPY', ff: 'JPY' },
+  { pair: 'AUD/EUR', ff: 'EUR' },
 ] as const
-
-const COMMODITIES = [
-  { name: 'Gold',    unit: '/oz',  td: 'XAU/USD', stooq: 'xauusd' },
-  { name: 'Silver',  unit: '/oz',  td: 'XAG/USD', stooq: 'xagusd' },
-  { name: 'WTI Oil', unit: '/bbl', td: 'WTI/USD', stooq: 'cl.f'   },
-] as const
-
-const INDICES = [
-  { name: 'ASX 200',  stooq: '^axjo' },
-  { name: 'S&P 500',  stooq: '^spx'  },
-  { name: 'Nikkei',   stooq: '^n225' },
-  { name: 'FTSE 100', stooq: '^ftse' },
-] as const
-
-const STOCKS = [
-  { ticker: 'CBA', stooq: 'cba.au', name: 'Commonwealth Bank'   },
-  { ticker: 'BHP', stooq: 'bhp.au', name: 'BHP Group'           },
-  { ticker: 'CSL', stooq: 'csl.au', name: 'CSL Limited'         },
-  { ticker: 'NAB', stooq: 'nab.au', name: 'National Australia'  },
-  { ticker: 'WBC', stooq: 'wbc.au', name: 'Westpac Banking'     },
-  { ticker: 'WDS', stooq: 'wds.au', name: 'Woodside Energy'     },
-  { ticker: 'RIO', stooq: 'rio.au', name: 'Rio Tinto'           },
-  { ticker: 'ANZ', stooq: 'anz.au', name: 'ANZ Group'           },
-  { ticker: 'FMG', stooq: 'fmg.au', name: 'Fortescue'           },
-  { ticker: 'MQG', stooq: 'mqg.au', name: 'Macquarie Group'     },
-] as const
-
-// ─── Handler ─────────────────────────────────────────────────────────────────
 
 export async function GET() {
-  const [tdFx, tdCmd, idxMap, stkMap, cmdStooqMap, fxRates] = await Promise.all([
-    fetchTwelveDataQuotes(FX_PAIRS.map(f => f.td)),
-    fetchTwelveDataQuotes(COMMODITIES.map(c => c.td)),
-    fetchStooqQuotes(INDICES.map(i => ({ id: i.name, sym: i.stooq }))),
-    fetchStooqQuotes(STOCKS.map(s => ({ id: s.ticker, sym: s.stooq }))),
-    fetchStooqQuotes(COMMODITIES.map(c => ({ id: c.name, sym: c.stooq }))),
-    fetchAUDRates().catch(() => null),
+  const tdSymbols = [...COMMODITIES.map(c => c.td), ...CRYPTO.map(c => c.td)]
+
+  const [td, fx] = await Promise.all([
+    fetchTwelveDataQuotes(tdSymbols),
+    fetchAUDFx().catch(() => ({} as Record<string, { rate: number; changePct: number | null }>)),
   ])
 
-  const tdRateLimited = tdFx.status === 'rate_limited' || tdCmd.status === 'rate_limited'
-  const tdKeyPresent  = tdFx.status !== 'no_key'
+  const tdKeyPresent  = td.status !== 'no_key'
+  const tdRateLimited = td.status === 'rate_limited'
 
-  // ── FX: Twelve Data (with % change) → Frankfurter (rate only) ──────────────
-  const fx: FXRow[] = FX_PAIRS.map(f => {
-    const q = tdFx.quotes.get(f.td)
-    if (q) return { pair: f.pair, value: q.price, change: q.change, source: 'twelvedata' }
-    const rate = fxRates?.rates?.[f.ff]
-    if (typeof rate === 'number') return { pair: f.pair, value: rate, change: null, source: 'frankfurter' }
-    return { pair: f.pair, value: null, change: null, source: 'none' }
-  })
+  // ── Hero: AUD/USD (the headline Australian number) ─────────────────────────
+  const aud = fx['USD']
+  const asx = aud
+    ? { price: aud.rate, change: aud.changePct ?? 0, changeAbs: aud.changePct != null ? (aud.rate * aud.changePct) / 100 : 0 }
+    : null
 
-  // ── Commodities: Twelve Data → Stooq ───────────────────────────────────────
+  // ── Commodities ────────────────────────────────────────────────────────────
   const commodities: CommodityRow[] = COMMODITIES.map(c => {
-    const q = tdCmd.quotes.get(c.td)
-    if (q) return { name: c.name, unit: c.unit, value: q.price, change: q.change, source: 'twelvedata' }
-    const s = cmdStooqMap.get(c.name)
-    if (s) return { name: c.name, unit: c.unit, value: s.price, change: s.change, source: 'stooq' }
-    return { name: c.name, unit: c.unit, value: null, change: null, source: 'none' }
+    const q = td.quotes.get(c.td)
+    return { name: c.name, unit: c.unit, value: q?.price ?? null, change: q?.change ?? null, source: q ? 'twelvedata' : 'none' }
   })
 
-  // ── Indices: Stooq only ────────────────────────────────────────────────────
-  const indices: IndexRow[] = INDICES.map(i => {
-    const q = idxMap.get(i.name)
-    return {
-      name:      i.name,
-      value:     q?.price     ?? null,
-      change:    q?.change    ?? null,
-      changeAbs: q?.changeAbs ?? null,
-      source:    q ? 'stooq' : 'none',
-    }
+  // ── Crypto ─────────────────────────────────────────────────────────────────
+  const crypto: CryptoRow[] = CRYPTO.map(c => {
+    const q = td.quotes.get(c.td)
+    return { symbol: c.symbol, name: c.name, price: q?.price ?? null, change: q?.change ?? null, source: q ? 'twelvedata' : 'none' }
   })
 
-  // ── ASX stocks: Stooq only ─────────────────────────────────────────────────
-  const topMovers: MoverRow[] = STOCKS.map(s => {
-    const q = stkMap.get(s.ticker)
-    return {
-      ticker:    s.ticker,
-      name:      s.name,
-      price:     q?.price     ?? null,
-      change:    q?.change    ?? null,
-      changeAbs: q?.changeAbs ?? null,
-      source:    q ? 'stooq' : 'none',
-    }
+  // ── FX (Frankfurter, with computed daily % change) ─────────────────────────
+  const fxRows: FXRow[] = FX_PAIRS.map(f => {
+    const q = fx[f.ff]
+    return { pair: f.pair, value: q?.rate ?? null, change: q?.changePct ?? null, source: q ? 'frankfurter' : 'none' }
   })
-
-  // ── ASX 200 hero ───────────────────────────────────────────────────────────
-  const asxQ = idxMap.get('ASX 200')
-  const asx = asxQ ? { price: asxQ.price, change: asxQ.change, changeAbs: asxQ.changeAbs } : null
-
-  // ── Provenance + liveness ──────────────────────────────────────────────────
-  const pick = (rows: { source: MarketSource }[], order: MarketSource[]): MarketSource =>
-    order.find(s => rows.some(r => r.source === s)) ?? 'none'
 
   const hasAnyLive =
-    fx.some(r => r.value !== null) ||
+    asx !== null ||
     commodities.some(r => r.value !== null) ||
-    indices.some(r => r.value !== null) ||
-    topMovers.some(r => r.price !== null)
+    crypto.some(r => r.price !== null) ||
+    fxRows.some(r => r.value !== null)
 
   const payload: MarketSummaryResponse = {
     asx,
-    indices,
+    indices: [],      // intentionally empty — index levels need licensed data
     commodities,
-    fx,
-    topMovers,
+    fx: fxRows,
+    topMovers: [],    // intentionally empty — ASX share prices need licensed data
+    crypto,
     meta: {
       fetchedAt:     new Date().toISOString(),
       hasAnyLive,
       tdKeyPresent,
       tdRateLimited,
       sources: {
-        indices:     pick(indices,     ['stooq']),
-        commodities: pick(commodities, ['twelvedata', 'stooq']),
-        fx:          pick(fx,          ['twelvedata', 'frankfurter']),
-        stocks:      pick(topMovers,   ['stooq']),
+        indices:     'none',
+        commodities: commodities.some(r => r.source === 'twelvedata') ? 'twelvedata'  : 'none',
+        fx:          fxRows.some(r => r.source === 'frankfurter')      ? 'frankfurter' : 'none',
+        stocks:      'none',
+        crypto:      crypto.some(r => r.source === 'twelvedata')       ? 'twelvedata'  : 'none',
       },
     },
   }
 
+  // Cache GOOD responses for 20 min (served stale while revalidating); cache a
+  // rate-limited/empty response only briefly so the page retries soon.
+  const dataOk = hasAnyLive && !tdRateLimited
   return NextResponse.json(payload, {
     headers: {
-      // Cache at the edge for 5 min (keeps Twelve Data well under the 800/day
-      // free-tier budget: FX 4 + commodities 3 = 7 credits per refresh).
-      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=120',
-      // Public market data, no secrets (key stays server-side) — allow the
-      // standalone live dashboard (markets-dashboard.html) to read it.
+      'Cache-Control': dataOk
+        ? 'public, s-maxage=1200, stale-while-revalidate=86400'
+        : 'public, s-maxage=15',
       'Access-Control-Allow-Origin': '*',
     },
   })

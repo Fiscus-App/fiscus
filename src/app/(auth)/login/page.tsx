@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { FiscusLogo } from '@/components/FiscusLogo'
 
 export default function LoginPage() {
@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState('')
+  const [needs2fa, setNeeds2fa]         = useState(false)
+  const [totp, setTotp]                 = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -23,17 +25,32 @@ export default function LoginPage() {
     const result = await signIn('credentials', {
       email,
       password,
+      ...(needs2fa ? { totp } : {}),
       redirect: false,
     })
 
     setLoading(false)
 
-    if (result?.error) {
-      setError('Invalid email or password')
-    } else {
+    if (!result?.error) {
       router.push('/feed')
       router.refresh()
+      return
     }
+
+    if (result.error === '2FA_REQUIRED') {
+      setNeeds2fa(true)
+      setError('')
+      return
+    }
+    if (result.error === '2FA_INVALID') {
+      setError('That code didn’t match. Try again.')
+      return
+    }
+    setError(
+      needs2fa
+        ? 'Could not sign you in. Check your code and try again.'
+        : 'Invalid email or password',
+    )
   }
 
   return (
@@ -53,6 +70,63 @@ export default function LoginPage() {
           className="rounded-2xl p-6 space-y-4"
           style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}
         >
+          {needs2fa ? (
+            <div className="space-y-4">
+              <div className="text-center">
+                <div
+                  className="mx-auto mb-3 flex items-center justify-center"
+                  style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(232,184,75,0.10)', border: '1px solid rgba(232,184,75,0.28)' }}
+                >
+                  <ShieldCheck size={22} strokeWidth={2} style={{ color: 'var(--gold)' }} />
+                </div>
+                <h1 className="font-serif text-[20px] font-semibold">Two-factor authentication</h1>
+                <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  Enter the 6-digit code from your authenticator app — or one of your backup codes.
+                </p>
+              </div>
+
+              {error && (
+                <div
+                  className="px-3 py-2.5 rounded-xl text-[13px]"
+                  style={{ background: 'rgba(255,82,82,0.08)', border: '1px solid rgba(255,82,82,0.25)', color: 'var(--red)' }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-3">
+                <input
+                  autoFocus
+                  value={totp}
+                  onChange={e => setTotp(e.target.value)}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={14}
+                  className="w-full px-3.5 py-3 rounded-xl text-center font-mono text-[18px] tracking-[0.35em] outline-none"
+                  style={{ background: 'var(--bg-3)', border: '1px solid var(--line-2)', color: 'var(--text-primary)' }}
+                  placeholder="123456"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 rounded-xl text-[13px] font-bold transition-opacity"
+                  style={{ background: 'var(--gold)', color: '#07091a', opacity: loading ? 0.7 : 1, boxShadow: '0 4px 20px rgba(212,168,67,0.25)' }}
+                >
+                  {loading ? 'Verifying…' : 'Verify & sign in'}
+                </button>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => { setNeeds2fa(false); setTotp(''); setError('') }}
+                className="w-full text-center text-[12px]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                ← Use a different account
+              </button>
+            </div>
+          ) : (
+          <>
           <h1 className="font-serif text-[20px] font-semibold text-center">Welcome back</h1>
 
           {error && (
@@ -175,6 +249,8 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          </>
+          )}
         </div>
 
         <p className="text-center text-[13px] mt-4" style={{ color: 'var(--text-muted)' }}>

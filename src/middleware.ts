@@ -7,5 +7,6 @@ export const config = {
     '/saved/:path*',
     '/teams/:path*',
     '/profile/:path*',
+    '/settings/:path*',
   ],
 }

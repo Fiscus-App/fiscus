@@ -59,6 +59,14 @@ export interface MoverRow {
   source:    MarketSource
 }
 
+export interface CryptoRow {
+  symbol:   string          // e.g. "BTC/USD"
+  name:     string          // e.g. "Bitcoin"
+  price:    number | null
+  change:   number | null
+  source:   MarketSource
+}
+
 export interface MarketMeta {
   fetchedAt:     string            // ISO timestamp this payload was built
   hasAnyLive:    boolean           // did ANY section return at least one real value?
@@ -69,6 +77,7 @@ export interface MarketMeta {
     commodities: MarketSource
     fx:          MarketSource
     stocks:      MarketSource
+    crypto:      MarketSource
   }
 }
 
@@ -78,6 +87,7 @@ export interface MarketSummaryResponse {
   commodities: CommodityRow[]
   fx:          FXRow[]
   topMovers:   MoverRow[]
+  crypto:      CryptoRow[]
   meta:        MarketMeta
 }
 
