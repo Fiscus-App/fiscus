@@ -35,6 +35,16 @@ export const metadata: Metadata = {
     description: '15-second AI briefings from trusted Australian financial sources.',
     type: 'website',
   },
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/apple-touch-icon.png',
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'Fiscus',
+    statusBarStyle: 'black-translucent',
+  },
 }
 
 export const viewport: Viewport = {

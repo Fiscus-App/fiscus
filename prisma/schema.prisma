@@ -29,6 +29,10 @@ model User {
   twoFactorPending        String?   // base32 secret held during setup, before verification
   twoFactorBackupCodes    String?   // JSON array of bcrypt-hashed single-use backup codes
 
+  // ─── Notifications ──────────────────────────────────────────────────
+  notificationPrefs       String?   // JSON blob of the user's notification toggles
+  pushLastNotifiedAt      DateTime? // cursor used by the news-alert engine
+
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -42,6 +46,7 @@ model User {
   teamMessages   TeamMessage[]
   articleSaves          ArticleSave[]
   articleInsightfulVotes ArticleInsightful[]
+  pushSubscriptions     PushSubscription[]
 }
 
 enum UserRole {
@@ -54,6 +59,23 @@ enum UserTier {
   PRO
   TEAM
   ENTERPRISE
+}
+
+// ─── WEB PUSH ────────────────────────────────────────────────────────
+// One row per browser/device the user has enabled push on.
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ─── INTERESTS ───────────────────────────────────────────────────────

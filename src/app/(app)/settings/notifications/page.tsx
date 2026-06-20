@@ -10,17 +10,24 @@ import {
 } from '@/components/settings/ui'
 import {
   getNotificationPrefs, setNotificationPrefs, type NotificationPrefs,
-  getPushPermission, requestPushPermission, systemSettingsHint, type PushPermission,
+  getPushPermission, systemSettingsHint, type PushPermission,
 } from '@/lib/settings'
+import {
+  subscribeToPush, unsubscribeFromPush, syncNotificationPrefs, pushSupported,
+} from '@/lib/push'
 
 export default function NotificationsSettingsPage() {
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null)
   const [perm, setPerm]   = useState<PushPermission>('default')
   const [busy, setBusy]   = useState(false)
+  const [note, setNote]   = useState('')
 
   useEffect(() => {
-    setPrefs(getNotificationPrefs())
-    setPerm(getPushPermission())
+    const local = getNotificationPrefs()
+    setPrefs(local)
+    setPerm(pushSupported() ? getPushPermission() : 'unsupported')
+    // Mirror on-device prefs to the server so the alert engine can respect them.
+    syncNotificationPrefs(local)
   }, [])
 
   function update<K extends keyof NotificationPrefs>(key: K, value: NotificationPrefs[K]) {
@@ -28,16 +35,33 @@ export default function NotificationsSettingsPage() {
       if (!prev) return prev
       const next = { ...prev, [key]: value }
       setNotificationPrefs(next)
+      syncNotificationPrefs(next)
       return next
     })
   }
 
   async function enablePush() {
     setBusy(true)
-    const result = await requestPushPermission()
-    setPerm(result)
-    if (result === 'granted') update('pushEnabled', true)
+    setNote('')
+    const result = await subscribeToPush()
+    setPerm(pushSupported() ? getPushPermission() : 'unsupported')
     setBusy(false)
+    if (result.ok) { update('pushEnabled', true); return }
+    if (result.reason === 'denied') { setPerm('denied'); return }
+    if (result.reason === 'no-vapid')          setNote('Push isn’t set up yet — add your VAPID key, then try again.')
+    else if (result.reason === 'unsupported')  setNote('This browser doesn’t support push notifications.')
+    else if (result.reason === 'save-failed')  setNote('Couldn’t save your subscription. Please try again.')
+  }
+
+  async function togglePush() {
+    if (!prefs) return
+    if (prefs.pushEnabled) {
+      await unsubscribeFromPush()
+      update('pushEnabled', false)
+    } else {
+      const r = await subscribeToPush()
+      if (r.ok) update('pushEnabled', true)
+    }
   }
 
   if (!prefs) return null
@@ -98,7 +122,7 @@ export default function NotificationsSettingsPage() {
 
             {perm === 'granted' && (
               <button
-                onClick={() => update('pushEnabled', !prefs.pushEnabled)}
+                onClick={togglePush}
                 className="mt-3 px-3.5 py-1.5 rounded-xl text-[11px] font-bold inline-flex items-center gap-1.5"
                 style={{
                   background: prefs.pushEnabled ? 'var(--bg-3)' : 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)',
@@ -118,6 +142,10 @@ export default function NotificationsSettingsPage() {
                 <span style={{ color: 'var(--text-muted)' }}>To turn alerts back on: </span>
                 {systemSettingsHint()}
               </div>
+            )}
+
+            {note && (
+              <p className="mt-2 text-[11px] leading-relaxed" style={{ color: 'var(--gold)' }}>{note}</p>
             )}
           </div>
         </div>
