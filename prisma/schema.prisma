@@ -46,6 +46,7 @@ model User {
   teamMessages   TeamMessage[]
   articleSaves          ArticleSave[]
   articleInsightfulVotes ArticleInsightful[]
+  articleShares         ArticleShare[]
   pushSubscriptions     PushSubscription[]
 }
 
@@ -261,6 +262,7 @@ model Article {
   jobEntry  IngestionJob?
   saves          ArticleSave[]
   insightfulVotes ArticleInsightful[]
+  shares         ArticleShare[]
 
   @@index([sourceId])
   @@index([publishedAt])
@@ -291,6 +293,20 @@ model ArticleInsightful {
   article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
 
   @@unique([userId, articleId])
+  @@index([userId])
+  @@index([articleId])
+}
+
+// One row per share action (a user may share an article more than once).
+model ArticleShare {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([articleId])
 }

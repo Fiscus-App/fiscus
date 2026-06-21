@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { VideoCard } from '@/components/feed/VideoCard'
+import { useFeedInteractions } from '@/lib/useFeedInteractions'
 import { getLocalFollows, type Follow } from '@/lib/following'
 import { UserCircle, TrendingUp, RefreshCw } from 'lucide-react'
 import type { FeedItem } from '@/types'
@@ -24,19 +25,35 @@ export default function FollowingPage() {
     return () => window.removeEventListener('resize', update)
   }, [])
 
-  // Load follows from localStorage
+  // Load follows from localStorage and keep the server copy in sync (for the
+  // alert engine + cross-device).
   useEffect(() => {
-    setFollows(getLocalFollows())
+    const local = getLocalFollows()
+    setFollows(local)
+    if (local.length) {
+      fetch('/api/following/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follows: local }),
+      }).catch(() => {})
+    }
   }, [])
 
   const fetchFeed = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true)
     setLoading(true)
+    // Match against the live localStorage follows so results reflect exactly
+    // what the user follows right now, regardless of DB sync timing.
+    const localFollows = getLocalFollows()
     try {
-      const res = await fetch('/api/feed/following')
+      const res = await fetch('/api/feed/following', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follows: localFollows }),
+      })
       if (res.ok) {
         const json = await res.json()
-        if (json.data?.length > 0) setItems(json.data)
+        setItems(json.data ?? [])
       }
     } catch { /* stay empty */ } finally {
       setRefreshing(false)
@@ -50,42 +67,7 @@ export default function FollowingPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchFeed])
 
-  const handleInsightful = useCallback((id: string) => {
-    setItems(prev => prev.map(item =>
-      item.id === id
-        ? { ...item, isInsightful: !item.isInsightful,
-            insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) }
-        : item
-    ))
-    fetch('/api/interactions/insightful', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ articleId: id }),
-    }).catch(() => {
-      setItems(prev => prev.map(item =>
-        item.id === id
-          ? { ...item, isInsightful: !item.isInsightful,
-              insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) }
-          : item
-      ))
-    })
-  }, [])
-
-  const handleSave = useCallback((id: string) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, isSaved: !item.isSaved } : item))
-    fetch('/api/interactions/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ articleId: id }),
-    }).catch(() => {
-      setItems(prev => prev.map(item => item.id === id ? { ...item, isSaved: !item.isSaved } : item))
-    })
-  }, [])
-
-  const handleShare = useCallback((id: string) => {
-    const item = items.find(i => i.id === id)
-    if (item && navigator.share) navigator.share({ title: item.headline, text: item.teaser }).catch(() => {})
-  }, [items])
+  const { handleInsightful, handleSave, handleShare } = useFeedInteractions(items, setItems)
 
   if (cardHeight === 0) return null
 

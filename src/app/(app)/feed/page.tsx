@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { VideoCard } from '@/components/feed/VideoCard'
+import { useFeedInteractions } from '@/lib/useFeedInteractions'
 import { RefreshCw } from 'lucide-react'
 import type { FeedItem } from '@/types'
 
@@ -166,44 +167,7 @@ export default function FeedPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchFeed])
 
-  const handleInsightful = useCallback((id: string) => {
-    // Optimistic update
-    setItems((prev) => prev.map((item) =>
-      item.id === id ? { ...item, isInsightful: !item.isInsightful,
-        insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) } : item
-    ))
-    // Persist to DB (fire and forget — UI already updated)
-    fetch('/api/interactions/insightful', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ articleId: id }),
-    }).catch(() => {
-      // Revert on failure
-      setItems((prev) => prev.map((item) =>
-        item.id === id ? { ...item, isInsightful: !item.isInsightful,
-          insightfulCount: item.insightfulCount + (item.isInsightful ? -1 : 1) } : item
-      ))
-    })
-  }, [])
-
-  const handleSave = useCallback((id: string) => {
-    // Optimistic update
-    setItems((prev) => prev.map((item) => item.id === id ? { ...item, isSaved: !item.isSaved } : item))
-    // Persist to DB
-    fetch('/api/interactions/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ articleId: id }),
-    }).catch(() => {
-      // Revert on failure
-      setItems((prev) => prev.map((item) => item.id === id ? { ...item, isSaved: !item.isSaved } : item))
-    })
-  }, [])
-
-  const handleShare = useCallback((id: string) => {
-    const item = items.find((i) => i.id === id)
-    if (item && navigator.share) navigator.share({ title: item.headline, text: item.teaser }).catch(() => {})
-  }, [items])
+  const { handleInsightful, handleSave, handleShare } = useFeedInteractions(items, setItems)
 
   if (cardHeight === 0) return null
 

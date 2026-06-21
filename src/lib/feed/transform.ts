@@ -22,10 +22,16 @@ export interface DbArticle {
     script: {
       fullScript: string
     } | null
-    _count: {
-      insightfulVotes: number
-    }
   } | null
+  // Real aggregate counts across all users (Prisma _count on the Article).
+  _count?: {
+    insightfulVotes: number
+    saves: number
+    shares: number
+  }
+  // Per-current-user state — non-empty arrays mean the user has acted.
+  insightfulVotes?: { id: string }[]
+  saves?: { id: string }[]
 }
 
 export function dbArticleToFeedItem(a: DbArticle): FeedItem {
@@ -56,12 +62,13 @@ export function dbArticleToFeedItem(a: DbArticle): FeedItem {
     price: null,
     tags: a.topicTags.length > 0 ? a.topicTags : [sector, ticker],
     publishedAt: relativeTime(a.publishedAt),
-    insightfulCount: a.video?._count?.insightfulVotes ?? 0,
+    insightfulCount: a._count?.insightfulVotes ?? 0,
+    shareCount: a._count?.shares ?? 0,
     chartData: null,
     videoStatus: videoStatus as 'PENDING' | 'COMPLETE' | 'FAILED',
     videoUrl: a.video?.videoUrl ?? undefined,
-    isInsightful: false,
-    isSaved: false,
+    isInsightful: (a.insightfulVotes?.length ?? 0) > 0,
+    isSaved: (a.saves?.length ?? 0) > 0,
   }
 }
 

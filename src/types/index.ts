@@ -20,6 +20,7 @@ export interface FeedItem {
   tags: string[]
   publishedAt: string
   insightfulCount: number
+  shareCount?: number
   chartData: number[] | null
   videoStatus: 'PENDING' | 'COMPLETE' | 'FAILED'
   videoUrl?: string

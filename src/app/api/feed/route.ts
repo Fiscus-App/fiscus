@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { db, dbAvailable } from '@/lib/db'
 import { dbArticleToFeedItem } from '@/lib/feed/transform'
 import { fetchStooqQuotesByTicker } from '@/lib/market/stooq'
@@ -9,6 +11,10 @@ export async function GET(req: NextRequest) {
   const pageSize = Math.min(50, parseInt(searchParams.get('pageSize') ?? '20'))
   const sector   = searchParams.get('sector')
   const search   = searchParams.get('search')
+
+  // Who's asking — lets us return their own saved/insightful state.
+  const session = await getServerSession(authOptions)
+  const userId  = session?.user?.id ?? '___nouser___'
 
   // ── No DB → return empty (feed page uses mock fallback) ─────────────────
   if (!dbAvailable) {
@@ -42,9 +48,11 @@ export async function GET(req: NextRequest) {
               status: true,
               videoUrl: true,
               script: { select: { fullScript: true } },
-              _count: { select: { insightfulVotes: true } },
             },
           },
+          _count: { select: { insightfulVotes: true, saves: true, shares: true } },
+          insightfulVotes: { where: { userId }, select: { id: true } },
+          saves: { where: { userId }, select: { id: true } },
         },
         orderBy: { publishedAt: 'desc' },
         skip: (page - 1) * pageSize,

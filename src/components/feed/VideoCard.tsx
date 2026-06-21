@@ -257,7 +257,11 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
         <button onClick={() => onShare(item.id)}
           className="flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer p-0">
           <Share2 size={28} strokeWidth={1.5} style={{ color: 'white' }} />
-          <span className="font-bold text-[12px]" style={{ color: 'white' }}>Share</span>
+          <span className="font-bold text-[12px]" style={{ color: 'white' }}>
+            {item.shareCount && item.shareCount > 0
+              ? (item.shareCount > 999 ? `${(item.shareCount / 1000).toFixed(1)}k` : item.shareCount)
+              : 'Share'}
+          </span>
         </button>
 
         {/* Spinning record */}
