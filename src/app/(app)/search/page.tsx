@@ -7,6 +7,8 @@ import { Search, X, ArrowUpRight, Clock } from 'lucide-react'
 interface Stock {
   ticker: string
   name: string
+  exchange: string
+  type: string
   sector: string
   sectorColor: string
 }
@@ -21,29 +23,17 @@ interface Article {
   source: { name: string }
 }
 
-interface DiscoverStock {
-  ticker: string
-  name: string
-  sector: string
-  sectorColor: string
-  change: number
-  price: number
-  volume?: string
-  note?: string
-}
-
-interface DiscoverCategory {
+interface BrowseCategory {
   id: string
   label: string
   icon: string
-  stocks: DiscoverStock[]
-  ghost: true
+  stocks: Stock[]
 }
 
 interface SearchResults {
   stocks: Stock[]
   articles: Article[]
-  trending: DiscoverCategory[] | null
+  browse: BrowseCategory[] | null
 }
 
 const RECENT_KEY = 'fiscus_recent_searches'
@@ -65,6 +55,19 @@ function timeAgo(iso: string) {
   if (h < 1) return `${Math.floor(diff / 60_000)}m ago`
   if (h < 24) return `${h}h ago`
   return `${Math.floor(h / 24)}d ago`
+}
+
+// Short type label shown on result rows.
+function typeLabel(type: string): string {
+  switch (type) {
+    case 'STOCK': return 'Stock'
+    case 'ETF': return 'ETF'
+    case 'INDEX': return 'Index'
+    case 'COMMODITY': return 'Commodity'
+    case 'FX': return 'Forex'
+    case 'CRYPTO': return 'Crypto'
+    default: return type
+  }
 }
 
 export default function SearchPage() {
@@ -92,7 +95,7 @@ export default function SearchPage() {
       const data = await res.json()
       setResults(data)
     } catch {
-      setResults({ stocks: [], articles: [], trending: null })
+      setResults({ stocks: [], articles: [], browse: null })
     } finally {
       setLoading(false)
     }
@@ -102,10 +105,10 @@ export default function SearchPage() {
     if (timerRef.current) clearTimeout(timerRef.current)
     if (!query.trim()) {
       setLoading(false)
-      doSearch('') // load trending
+      doSearch('') // load browse categories
       return
     }
-    timerRef.current = setTimeout(() => doSearch(query), 300)
+    timerRef.current = setTimeout(() => doSearch(query), 250)
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [query, doSearch])
 
@@ -118,7 +121,7 @@ export default function SearchPage() {
   function handleStockTap(stock: Stock) {
     addRecent(stock.ticker)
     setRecent(getRecent())
-    router.push(`/asset/${stock.ticker}`)
+    router.push(`/asset/${encodeURIComponent(stock.ticker)}`)
   }
 
   function handleArticleTap(id: string) {
@@ -142,7 +145,7 @@ export default function SearchPage() {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search stocks, companies, news…"
+            placeholder="Search stocks, ETFs, crypto, FX, indices…"
             className="w-full pl-9 pr-10 py-3 rounded-2xl text-[14px] outline-none transition-all"
             style={{
               background: 'var(--bg-3)',
@@ -152,7 +155,7 @@ export default function SearchPage() {
             }}
           />
           {query && (
-            <button onClick={() => setQuery('')}
+            <button onClick={() => setQuery('')} aria-label="Clear search"
               className="absolute right-3 flex items-center justify-center"
               style={{ width: 22, height: 22, borderRadius: 11, background: 'var(--bg-4)', color: 'var(--text-muted)' }}>
               <X size={12} strokeWidth={2.5} />
@@ -163,7 +166,7 @@ export default function SearchPage() {
 
       <div className="px-4 pb-8">
 
-        {/* ── Empty state: Recent + Discover categories ──────────────── */}
+        {/* ── Empty state: Recent + Browse categories ──────────────────── */}
         {isEmpty && (
           <>
             {/* Recent searches */}
@@ -188,70 +191,41 @@ export default function SearchPage() {
               </div>
             )}
 
-            {/* Discover categories */}
-            {results?.trending?.map(cat => (
+            {/* Browse categories — real assets, no prices, all link to asset pages */}
+            {results?.browse?.map(cat => (
               <div key={cat.id} className="mt-6">
-                {/* Category header */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span style={{ fontSize: 14 }}>{cat.icon}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
-                      style={{ color: 'var(--text-muted)' }}>{cat.label}</span>
-                  </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span style={{ fontSize: 14 }}>{cat.icon}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
+                    style={{ color: 'var(--text-muted)' }}>{cat.label}</span>
                 </div>
 
-                {/* Stock rows */}
                 <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
-                  {cat.stocks.map((s, i) => {
-                    const isUp = s.change >= 0
-                    return (
-                      <button key={s.ticker}
-                        onClick={() => handleStockTap(s)}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                        style={{
-                          background: 'var(--bg-2)',
-                          borderBottom: i < cat.stocks.length - 1 ? '1px solid var(--line)' : 'none',
-                        }}>
-
-                        {/* Rank */}
-                        <span className="font-mono text-[10px] w-4 flex-shrink-0 text-right"
-                          style={{ color: 'var(--text-faint)' }}>{i + 1}</span>
-
-                        {/* Icon */}
-                        <div className="flex items-center justify-center rounded-xl flex-shrink-0"
-                          style={{ width: 36, height: 36, background: `${s.sectorColor}14`, border: `1px solid ${s.sectorColor}28` }}>
-                          <span className="font-mono font-bold text-[9px]" style={{ color: s.sectorColor }}>
-                            {s.ticker.slice(0, 4)}
-                          </span>
-                        </div>
-
-                        {/* Name */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-[13px]" style={{ color: 'var(--text-primary)' }}>{s.ticker}</span>
-                            {s.note && (
-                              <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded"
-                                style={{ background: 'rgba(232,184,75,0.08)', color: 'var(--gold)', border: '1px solid rgba(232,184,75,0.15)' }}>
-                                {s.note}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{s.name}</div>
-                        </div>
-
-                        {/* Price + change */}
-                        <div className="text-right flex-shrink-0">
-                          <div className="font-mono font-bold text-[13px]" style={{ color: 'var(--text-primary)' }}>
-                            ${s.price.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div className="font-mono font-bold text-[11px]"
-                            style={{ color: isUp ? 'var(--green)' : 'var(--red)' }}>
-                            {isUp ? '▲' : '▼'} {Math.abs(s.change).toFixed(2)}%
-                          </div>
-                        </div>
-                      </button>
-                    )
-                  })}
+                  {cat.stocks.map((s, i) => (
+                    <button key={s.ticker}
+                      onClick={() => handleStockTap(s)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                      style={{
+                        background: 'var(--bg-2)',
+                        borderBottom: i < cat.stocks.length - 1 ? '1px solid var(--line)' : 'none',
+                      }}>
+                      <div className="flex items-center justify-center rounded-xl flex-shrink-0"
+                        style={{ width: 36, height: 36, background: `${s.sectorColor}14`, border: `1px solid ${s.sectorColor}28` }}>
+                        <span className="font-mono font-bold text-[9px]" style={{ color: s.sectorColor }}>
+                          {s.ticker.slice(0, 4)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-[13px]" style={{ color: 'var(--text-primary)' }}>{s.ticker}</div>
+                        <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{s.name}</div>
+                      </div>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                        style={{ background: `${s.sectorColor}18`, color: s.sectorColor, border: `1px solid ${s.sectorColor}28` }}>
+                        {s.exchange}
+                      </span>
+                      <ArrowUpRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    </button>
+                  ))}
                 </div>
               </div>
             ))}
@@ -269,7 +243,7 @@ export default function SearchPage() {
                   <Search size={22} style={{ color: 'var(--text-muted)' }} />
                 </div>
                 <div className="text-center">
-                  <p className="font-semibold text-[15px] mb-1">No results for "{query}"</p>
+                  <p className="font-semibold text-[15px] mb-1">No results for &ldquo;{query}&rdquo;</p>
                   <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
                     Try a ticker symbol, company name, or topic
                   </p>
@@ -277,7 +251,7 @@ export default function SearchPage() {
               </div>
             )}
 
-            {/* Stocks */}
+            {/* Stocks / assets */}
             {results && results.stocks.length > 0 && (
               <div className="mt-5 mb-6">
                 <div className="flex items-center gap-2 mb-3">
@@ -285,18 +259,17 @@ export default function SearchPage() {
                     style={{ background: 'var(--gold)' }} />
                   <span className="text-[10px] font-bold uppercase tracking-[0.18em] font-mono"
                     style={{ color: 'var(--text-muted)' }}>
-                    Stocks & Companies
+                    Markets &amp; Assets
                   </span>
                 </div>
                 <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
                   {results.stocks.map((s, i) => (
-                    <button key={s.ticker} onClick={() => handleStockTap(s)}
+                    <button key={`${s.ticker}-${s.exchange}`} onClick={() => handleStockTap(s)}
                       className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
                       style={{
                         background: 'var(--bg-2)',
                         borderBottom: i < results.stocks.length - 1 ? '1px solid var(--line)' : 'none',
                       }}>
-                      {/* Icon */}
                       <div className="flex items-center justify-center rounded-xl flex-shrink-0"
                         style={{ width: 40, height: 40, background: `${s.sectorColor}18`, border: `1px solid ${s.sectorColor}30` }}>
                         <span className="font-mono font-bold text-[11px]" style={{ color: s.sectorColor }}>
@@ -304,17 +277,18 @@ export default function SearchPage() {
                         </span>
                       </div>
 
-                      {/* Name / sector */}
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-[14px]" style={{ color: 'var(--text-primary)' }}>{s.ticker}</div>
                         <div className="text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>{s.name}</div>
                       </div>
 
-                      {/* Sector pill */}
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-                        style={{ background: `${s.sectorColor}18`, color: s.sectorColor, border: `1px solid ${s.sectorColor}28` }}>
-                        {s.sector}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: `${s.sectorColor}18`, color: s.sectorColor, border: `1px solid ${s.sectorColor}28` }}>
+                          {s.exchange}
+                        </span>
+                        <span className="text-[9px] font-mono" style={{ color: 'var(--text-faint)' }}>{typeLabel(s.type)}</span>
+                      </div>
 
                       <ArrowUpRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
                     </button>
@@ -340,7 +314,6 @@ export default function SearchPage() {
                       className="w-full text-left px-4 py-4 rounded-2xl"
                       style={{ background: 'var(--bg-2)', border: '1px solid var(--line)' }}>
 
-                      {/* Source + time */}
                       <div className="flex items-center gap-2 mb-2">
                         {a.sector && (
                           <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
@@ -357,13 +330,11 @@ export default function SearchPage() {
                         </span>
                       </div>
 
-                      {/* Title */}
                       <p className="font-semibold text-[13px] leading-snug mb-2"
                         style={{ color: 'var(--text-primary)' }}>
                         {a.title}
                       </p>
 
-                      {/* Summary */}
                       {a.summary && (
                         <p className="text-[12px] leading-relaxed line-clamp-2"
                           style={{ color: 'var(--text-muted)' }}>
@@ -371,7 +342,6 @@ export default function SearchPage() {
                         </p>
                       )}
 
-                      {/* Tickers */}
                       {a.relatedTickers.length > 0 && (
                         <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
                           {a.relatedTickers.slice(0, 4).map(t => (

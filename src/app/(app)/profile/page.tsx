@@ -493,16 +493,16 @@ export default function ProfilePage() {
                     Full access · Free during beta period
                   </div>
                 </div>
-                <button
+                <span
                   className="px-3.5 py-1.5 rounded-xl text-[11px] font-bold"
                   style={{
-                    background: 'linear-gradient(135deg, #e8b84b 0%, #f5cc5a 100%)',
-                    color: '#05081a',
-                    boxShadow: '0 0 16px rgba(232,184,75,0.22)',
+                    background: 'rgba(232,184,75,0.12)',
+                    color: 'var(--gold)',
+                    border: '1px solid rgba(232,184,75,0.30)',
                   }}
                 >
-                  Upgrade
-                </button>
+                  Active
+                </span>
               </div>
             </div>
 

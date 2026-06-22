@@ -13,9 +13,11 @@ export const authOptions: NextAuthOptions = {
     error: '/login',
   },
   providers: [
-    GoogleProvider({
-      clientId:     process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    // Google sign-in is only registered when its credentials are configured —
+    // otherwise the "Continue with Google" button would lead to an OAuth error.
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? [GoogleProvider({
+      clientId:     process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       profile(profile) {
         return {
           id:    profile.sub,
@@ -26,7 +28,7 @@ export const authOptions: NextAuthOptions = {
           tier:  'FREE',
         }
       },
-    }),
+    })] : []),
     CredentialsProvider({
       name: 'credentials',
       credentials: {

@@ -42,6 +42,9 @@ export interface TDQuote {
   prevClose:  number
   name?:      string
   isOpen?:    boolean
+  volume?:    number   // session volume (when supplied)
+  high52w?:   number   // 52-week high (when supplied)
+  low52w?:    number   // 52-week low (when supplied)
 }
 
 /** Outcome of a Twelve Data batch fetch — lets callers distinguish failure modes. */
@@ -65,6 +68,8 @@ interface TDRawQuote {
   previous_close?: string
   change?:         string
   percent_change?: string
+  volume?:         string
+  fifty_two_week?: { low?: string; high?: string }
   is_market_open?: boolean
   status?:         string
   code?:           number          // error code from TD (e.g. 429, 404)
@@ -112,6 +117,10 @@ function parseQuote(raw: TDRawQuote, ticker: string): TDQuote | null {
     changePct = ((price - prev) / prev) * 100
   }
 
+  const volume = num(raw.volume)
+  const hi52   = num(raw.fifty_two_week?.high)
+  const lo52   = num(raw.fifty_two_week?.low)
+
   return {
     ticker,
     tdSymbol:  raw.symbol ?? ticker,
@@ -121,6 +130,9 @@ function parseQuote(raw: TDRawQuote, ticker: string): TDQuote | null {
     prevClose: Number.isFinite(prev)      ? prev      : 0,
     name:      raw.name,
     isOpen:    raw.is_market_open,
+    volume:    Number.isFinite(volume) && volume > 0 ? volume : undefined,
+    high52w:   Number.isFinite(hi52)   && hi52   > 0 ? hi52   : undefined,
+    low52w:    Number.isFinite(lo52)   && lo52   > 0 ? lo52   : undefined,
   }
 }
 

@@ -155,7 +155,7 @@ export function NotificationsDrawer({ open, onClose }: Props) {
 
   const handleTap = useCallback((id: string) => {
     onClose()
-    router.push(`/feed?article=${id}`)
+    router.push(`/article/${id}`)
   }, [onClose, router])
 
   const totalAlerts = (data?.followAlerts.length ?? 0) + (data?.breaking.length ?? 0)

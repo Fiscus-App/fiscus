@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { RefreshCw } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -12,15 +13,16 @@ interface AssetProfile {
   exchange?:   string
   sector:      string
   sectorColor: string
-  type:        'STOCK' | 'COMMODITY' | 'INDEX' | 'FX' | 'MONETARY_POLICY'
-  price:       number
-  change:      number
-  changeAbs:   number
+  type:        'STOCK' | 'ETF' | 'COMMODITY' | 'INDEX' | 'FX' | 'CRYPTO' | 'MONETARY_POLICY'
+  price:       number | null
+  change:      number | null
+  changeAbs:   number | null
   currency:    string
+  unit?:       string | null
   marketCap?:  string
   volume?:     string
-  high52w:     number
-  low52w:      number
+  high52w:     number | null
+  low52w:      number | null
   peRatio?:    number
   dividend?:   number
   description: string
@@ -75,9 +77,11 @@ function formatPrice(price: number, currency: string, type: string): string {
 function typeLabel(type: string): string {
   switch (type) {
     case 'STOCK':            return 'Stock'
+    case 'ETF':              return 'ETF'
     case 'COMMODITY':        return 'Commodity'
     case 'INDEX':            return 'Index'
     case 'FX':               return 'FX Rate'
+    case 'CRYPTO':           return 'Crypto'
     case 'MONETARY_POLICY':  return 'Interest Rate'
     default:                 return type
   }
@@ -129,7 +133,7 @@ export default function AssetPage() {
   // ── Slice chart by tab ─────────────────────────────────────────────────────
   const chartPoints = (): ChartPoint[] => {
     if (!data) return []
-    const all     = chart  // live.chart if available, else empty
+    const all     = data.chart  // live.chart if available, else empty
     if (!all.length) return []
     const len     = all.length
     const cutFrac = tab === '1M' ? 0.92 : tab === '3M' ? 0.77 : tab === '6M' ? 0.5 : 0
@@ -143,7 +147,7 @@ export default function AssetPage() {
   const maxP = Math.max(...pts.map(p => p.price))
 
   // ── Loading skeleton ───────────────────────────────────────────────────────
-  if (loading) return (
+  if (loading && !data) return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg-1)', padding: '0 0 90px' }}>
       {/* header skeleton */}
       <div style={{ height: 58, background: 'var(--bg-2)', borderBottom: '1px solid var(--border)' }} />
@@ -159,17 +163,34 @@ export default function AssetPage() {
   )
 
   if (!data) return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg-1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <p style={{ color: 'var(--text-2)' }}>Asset not found</p>
+    <div style={{ minHeight: '100dvh', background: 'var(--bg-1)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24, textAlign: 'center' }}>
+      <p style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, margin: 0 }}>Asset not found</p>
+      <p style={{ color: 'var(--text-2)', fontSize: 13, margin: 0, maxWidth: 280 }}>
+        We couldn’t find “{String(ticker).toUpperCase()}”. Try searching for a ticker or company name.
+      </p>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={() => router.back()}
+          style={{ background: 'var(--bg-3)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', color: 'var(--text-1)', fontSize: 13, fontWeight: 600 }}>
+          Go back
+        </button>
+        <button onClick={() => router.push('/search')}
+          style={{ background: 'var(--gold)', border: 'none', borderRadius: 10, padding: '8px 16px', cursor: 'pointer', color: '#05081a', fontSize: 13, fontWeight: 700 }}>
+          Search
+        </button>
+      </div>
     </div>
   )
 
-  const { profile, chart, articles } = data
+  const { profile, articles } = data
   const price     = profile.price
   const change    = profile.change
   const changeAbs = profile.changeAbs
   const isLive    = profile.isLive ?? false
-  const up        = change >= 0
+  const hasPrice  = price !== null && price !== undefined
+  const up        = (change ?? 0) >= 0
+  const hasRange  =
+    profile.high52w != null && profile.low52w != null &&
+    profile.high52w > profile.low52w
 
   return (
     <div style={{ minHeight: '100dvh', background: 'var(--bg-1)', paddingBottom: 90 }}>
@@ -207,6 +228,18 @@ export default function AssetPage() {
         }}>
           {profile.sector}
         </span>
+        <button
+          onClick={() => load()}
+          disabled={loading}
+          aria-label="Refresh"
+          style={{
+            background: 'var(--bg-3)', border: 'none', borderRadius: 10,
+            width: 36, height: 36, cursor: 'pointer', color: 'var(--text-2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
       </header>
 
       {/* ── Hero: price + change ─────────────────────────────────────────────── */}
@@ -216,107 +249,133 @@ export default function AssetPage() {
           {profile.name}
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 8 }}>
-          <span style={{ fontSize: 42, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1 }}>
-            {formatPrice(price, profile.currency, profile.type)}
-          </span>
-          <span style={{
-            fontSize: 15, fontWeight: 700, paddingBottom: 4,
-            color: up ? '#2ed494' : '#ff4f4f',
-          }}>
-            {up ? '▲' : '▼'} {Math.abs(change).toFixed(2)}%
-          </span>
-        </div>
+        {hasPrice ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 8 }}>
+              <span style={{ fontSize: 42, fontWeight: 800, color: 'var(--text-1)', lineHeight: 1 }}>
+                {formatPrice(price as number, profile.currency, profile.type)}
+                {profile.unit && <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-2)', marginLeft: 4 }}>{profile.unit}</span>}
+              </span>
+              {change !== null && (
+                <span style={{
+                  fontSize: 15, fontWeight: 700, paddingBottom: 4,
+                  color: up ? '#2ed494' : '#ff4f4f',
+                }}>
+                  {up ? '▲' : '▼'} {Math.abs(change).toFixed(2)}%
+                </span>
+              )}
+            </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{
-            fontSize: 13, color: up ? '#2ed494' : '#ff4f4f', fontWeight: 600,
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              {changeAbs !== null && (
+                <span style={{ fontSize: 13, color: up ? '#2ed494' : '#ff4f4f', fontWeight: 600 }}>
+                  {up ? '+' : ''}{formatPrice(Math.abs(changeAbs), profile.currency, profile.type)} today
+                </span>
+              )}
+              {isLive && (
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: '2px 6px',
+                  borderRadius: 4, background: '#2ed49420', color: '#2ed494',
+                  letterSpacing: '0.04em',
+                }}>
+                  LIVE
+                </span>
+              )}
+            </div>
+          </>
+        ) : (
+          <div style={{
+            marginTop: 8, marginBottom: 4, padding: '14px 16px', borderRadius: 12,
+            background: 'var(--bg-2)', border: '1px solid var(--border)',
           }}>
-            {up ? '+' : ''}{formatPrice(Math.abs(changeAbs), profile.currency, profile.type)} today
-          </span>
-          {isLive && (
-            <span style={{
-              fontSize: 10, fontWeight: 700, padding: '2px 6px',
-              borderRadius: 4, background: '#2ed49420', color: '#2ed494',
-              letterSpacing: '0.04em',
-            }}>
-              LIVE
-            </span>
-          )}
-        </div>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: 'var(--text-1)' }}>
+              Live pricing unavailable
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5 }}>
+              {profile.exchange === 'ASX'
+                ? 'Live ASX share prices require licensed market data and aren’t available on the free tier. Company profile and related coverage are shown below.'
+                : 'No live quote is available for this asset right now. Tap refresh to try again.'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Chart ───────────────────────────────────────────────────────────── */}
       <div style={{ padding: '20px 0 0' }}>
+        {pts.length > 1 ? (
+          <>
+            {/* Tab row */}
+            <div style={{ display: 'flex', gap: 4, padding: '0 20px 16px' }}>
+              {(['1M','3M','6M','YTD'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  style={{
+                    flex: 1, height: 32, borderRadius: 8, border: 'none',
+                    cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                    background: tab === t ? 'var(--gold)' : 'var(--bg-3)',
+                    color:      tab === t ? '#05081a'      : 'var(--text-2)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
 
-        {/* Tab row */}
-        <div style={{ display: 'flex', gap: 4, padding: '0 20px 16px' }}>
-          {(['1M','3M','6M','YTD'] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                flex: 1, height: 32, borderRadius: 8, border: 'none',
-                cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                background: tab === t ? 'var(--gold)' : 'var(--bg-3)',
-                color:      tab === t ? '#05081a'      : 'var(--text-2)',
-                transition: 'all 0.15s',
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+            {/* Area chart */}
+            <div style={{ height: 200, paddingRight: 4 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={pts} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor={up ? '#2ed494' : '#ff4f4f'} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={up ? '#2ed494' : '#ff4f4f'} stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="week" tick={false} axisLine={false} tickLine={false} />
+                  <YAxis domain={[minP * 0.97, maxP * 1.03]} hide />
+                  <Tooltip
+                    content={<ChartTooltip currency={profile.currency} type={profile.type} />}
+                    cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="price"
+                    stroke={up ? '#2ed494' : '#ff4f4f'}
+                    strokeWidth={2}
+                    fill="url(#priceGrad)"
+                    dot={false}
+                    activeDot={{ r: 4, fill: up ? '#2ed494' : '#ff4f4f', strokeWidth: 0 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
 
-        {/* Area chart */}
-        <div style={{ height: 200, paddingRight: 4 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={pts} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor={up ? '#2ed494' : '#ff4f4f'} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={up ? '#2ed494' : '#ff4f4f'} stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="week"
-                tick={false}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                domain={[minP * 0.97, maxP * 1.03]}
-                hide
-              />
-              <Tooltip
-                content={<ChartTooltip currency={profile.currency} type={profile.type} />}
-                cursor={{ stroke: 'var(--border)', strokeWidth: 1 }}
-              />
-              <Area
-                type="monotone"
-                dataKey="price"
-                stroke={up ? '#2ed494' : '#ff4f4f'}
-                strokeWidth={2}
-                fill="url(#priceGrad)"
-                dot={false}
-                activeDot={{ r: 4, fill: up ? '#2ed494' : '#ff4f4f', strokeWidth: 0 }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Month labels */}
-        <div style={{
-          display: 'flex', justifyContent: 'space-between',
-          padding: '6px 20px 0', marginTop: 4,
-        }}>
-          {MONTH_LABELS.map(m => (
-            <span key={m} style={{ fontSize: 10, color: 'var(--text-3)' }}>{m}</span>
-          ))}
-        </div>
+            {/* Month labels */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 20px 0', marginTop: 4 }}>
+              {MONTH_LABELS.map(m => (
+                <span key={m} style={{ fontSize: 10, color: 'var(--text-3)' }}>{m}</span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div style={{ padding: '0 20px' }}>
+            <div style={{
+              height: 140, borderRadius: 14, background: 'var(--bg-2)',
+              border: '1px solid var(--border)', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 24px',
+            }}>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                Price history isn’t available for this asset on the free data tier.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Key Stats ───────────────────────────────────────────────────────── */}
+      {(hasRange || profile.marketCap || profile.volume || profile.peRatio || profile.dividend) && (
       <div style={{ padding: '24px 20px 0' }}>
         <div style={{
           display: 'grid', gridTemplateColumns: '1fr 1fr',
@@ -325,8 +384,8 @@ export default function AssetPage() {
           border: '1px solid var(--border)',
         }}>
           {[
-            { label: '52W High',   value: formatPrice(profile.high52w, profile.currency, profile.type) },
-            { label: '52W Low',    value: formatPrice(profile.low52w,  profile.currency, profile.type) },
+            ...(hasRange ? [{ label: '52W High', value: formatPrice(profile.high52w as number, profile.currency, profile.type) }] : []),
+            ...(hasRange ? [{ label: '52W Low',  value: formatPrice(profile.low52w  as number, profile.currency, profile.type) }] : []),
             ...(profile.marketCap ? [{ label: 'Market Cap', value: profile.marketCap }] : []),
             ...(profile.volume    ? [{ label: 'Volume',     value: profile.volume    }] : []),
             ...(profile.peRatio   ? [{ label: 'P/E Ratio',  value: profile.peRatio.toFixed(1) + 'x' }] : []),
@@ -346,13 +405,15 @@ export default function AssetPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* ── 52-week range bar ───────────────────────────────────────────────── */}
+      {hasRange && hasPrice && (
       <div style={{ padding: '16px 20px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>52W Range</span>
           <span style={{ fontSize: 11, color: 'var(--text-2)', fontWeight: 600 }}>
-            {formatPrice(profile.low52w, profile.currency, profile.type)} – {formatPrice(profile.high52w, profile.currency, profile.type)}
+            {formatPrice(profile.low52w as number, profile.currency, profile.type)} – {formatPrice(profile.high52w as number, profile.currency, profile.type)}
           </span>
         </div>
         <div style={{
@@ -361,10 +422,11 @@ export default function AssetPage() {
           <div style={{
             height: '100%', borderRadius: 3,
             background: `linear-gradient(90deg, var(--bg-3) 0%, ${up ? '#2ed494' : '#ff4f4f'} 100%)`,
-            width: `${((profile.price - profile.low52w) / (profile.high52w - profile.low52w) * 100).toFixed(0)}%`,
+            width: `${Math.max(0, Math.min(100, (((profile.price as number) - (profile.low52w as number)) / ((profile.high52w as number) - (profile.low52w as number))) * 100)).toFixed(0)}%`,
           }} />
         </div>
       </div>
+      )}
 
       {/* ── About ───────────────────────────────────────────────────────────── */}
       <div style={{ padding: '24px 20px 0' }}>
@@ -419,7 +481,7 @@ export default function AssetPage() {
             {articles.map((article, idx) => (
               <button
                 key={article.id}
-                onClick={() => router.push(`/feed?article=${article.id}`)}
+                onClick={() => router.push(`/article/${article.id}`)}
                 style={{
                   display: 'block', width: '100%', textAlign: 'left',
                   background: 'var(--bg-2)', border: 'none', cursor: 'pointer',

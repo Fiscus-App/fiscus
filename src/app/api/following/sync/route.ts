@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db, dbAvailable } from '@/lib/db'
+import { FollowType } from '@prisma/client'
 
 // POST /api/following/sync  { follows: Follow[] }
 // Replaces the user's server-side follows with the provided set (localStorage is
@@ -17,8 +18,8 @@ export async function POST(req: NextRequest) {
 
   const userId = session.user.id
   const body = await req.json().catch(() => ({}))
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const follows: any[] = Array.isArray(body?.follows) ? body.follows : []
+  const follows: { type: FollowType; value: string; label?: string; meta?: unknown }[] =
+    Array.isArray(body?.follows) ? body.follows : []
 
   try {
     const incoming = new Set(follows.map((f) => `${f.type}:${f.value}`))

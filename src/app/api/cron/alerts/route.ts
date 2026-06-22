@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       const top = articles[0]
       const label = top.relatedTickers[0] ?? top.sector ?? 'Fiscus'
       const payload = articles.length === 1
-        ? { title: label, body: top.title, url: `/feed?article=${top.id}`, tag: 'fiscus-news' }
+        ? { title: label, body: top.title, url: `/article/${top.id}`, tag: 'fiscus-news' }
         : { title: `${articles.length} new briefings`, body: `${top.title}  ·  +${articles.length - 1} more`, url: '/feed', tag: 'fiscus-news' }
 
       const n = await sendPushToUser(user.id, payload)
