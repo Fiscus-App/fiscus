@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Play, Pause, Volume2, VolumeX } from 'lucide-react'
 import { SceneRenderer } from './Scenes'
 import { useNarration } from '@/lib/video/useNarration'
@@ -15,14 +15,17 @@ interface Props {
 /**
  * Plays a VideoComposition as a continuous, looping briefing.
  *
- * The SPEECH drives the timeline: each scene holds until its narration line
- * actually finishes (utterance `onend`), then advances — so a line is never
- * cut off mid-sentence by a fixed timer. After the last scene it loops back to
- * the start. A generous safety timer + token guards keep the visuals moving
- * even when speech is muted, unsupported, or misbehaves.
+ * Two clocks, one behaviour:
+ *  • Premium audio (composition.audioUrl): a hidden <audio> is the master clock;
+ *    visuals track its currentTime and it loops on end. This is the natural,
+ *    full-take premium voiceover.
+ *  • No audio: the browser SpeechSynthesis speaks each beat and the scene holds
+ *    until the line finishes (onend), then advances — never cutting off — and
+ *    loops at the end.
  */
 export function VideoPlayer({ composition, onProgress }: Props) {
   const { scenes } = composition
+  const hasAudio = !!composition.audioUrl
 
   const { starts, total } = useMemo(() => {
     const s: number[] = []
@@ -33,16 +36,62 @@ export function VideoPlayer({ composition, onProgress }: Props) {
 
   const [index, setIndex] = useState(0)
   const [playing, setPlaying] = useState(true) // instant autoplay
+  const [muted, setMuted] = useState(false)    // voiced by default
   const [sceneFraction, setSceneFraction] = useState(0)
-  const narrator = useNarration(false) // voiced by default — no unmute needed
+  const narrator = useNarration(false)
 
   const tokenRef = useRef(0)
   const rafRef = useRef<number | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
   const onProgressRef = useRef(onProgress)
   onProgressRef.current = onProgress
 
-  // ── Master loop ──────────────────────────────────────────────────────────
+  const sceneAt = useCallback((elapsed: number) => {
+    let i = starts.length - 1
+    for (let k = 0; k < starts.length; k++) {
+      if (elapsed < starts[k] + scenes[k].durationMs) { i = k; break }
+    }
+    const within = (elapsed - starts[i]) / scenes[i].durationMs
+    return { i, within: Math.min(Math.max(within, 0), 1) }
+  }, [starts, scenes])
+
+  // ── Premium-audio clock ────────────────────────────────────────────────
   useEffect(() => {
+    if (!hasAudio) return
+    const audio = audioRef.current
+    if (!audio) return
+    audio.muted = muted
+    if (!playing) { audio.pause(); return }
+
+    const tryPlay = () => {
+      const p = audio.play()
+      // If the browser blocks audible autoplay, fall back to muted so the
+      // visuals still advance; a single tap on the speaker unmutes.
+      if (p) p.catch(() => { audio.muted = true; setMuted(true); audio.play().catch(() => {}) })
+    }
+    tryPlay()
+
+    const onTime = () => {
+      const dur = audio.duration && isFinite(audio.duration) ? audio.duration : total / 1000
+      const frac = dur > 0 ? Math.min(audio.currentTime / dur, 1) : 0
+      const elapsed = frac * total
+      const { i, within } = sceneAt(elapsed)
+      setIndex(i)
+      setSceneFraction(within)
+      onProgressRef.current?.(frac, audio.currentTime * 1000)
+    }
+    const onEnded = () => { audio.currentTime = 0; audio.play().catch(() => {}) } // loop
+    audio.addEventListener('timeupdate', onTime)
+    audio.addEventListener('ended', onEnded)
+    return () => {
+      audio.removeEventListener('timeupdate', onTime)
+      audio.removeEventListener('ended', onEnded)
+    }
+  }, [hasAudio, playing, muted, total, sceneAt])
+
+  // ── Browser-voice clock (fallback) ──────────────────────────────────────
+  useEffect(() => {
+    if (hasAudio) return
     if (!playing) { narrator.cancel(); return }
     const scene = scenes[index]
     if (!scene) return
@@ -50,11 +99,10 @@ export function VideoPlayer({ composition, onProgress }: Props) {
     setSceneFraction(0)
 
     const advance = () => {
-      if (tokenRef.current !== myToken) return // stale callback
-      setIndex((i) => (i + 1) % scenes.length) // …loops at the end
+      if (tokenRef.current !== myToken) return
+      setIndex((i) => (i + 1) % scenes.length) // loop
     }
 
-    // Smooth per-scene progress (visual only) + overall progress callback.
     const startTs = performance.now()
     const estMs = scene.durationMs
     const tick = (now: number) => {
@@ -67,18 +115,16 @@ export function VideoPlayer({ composition, onProgress }: Props) {
     }
     rafRef.current = requestAnimationFrame(tick)
 
-    // Voice drives the real advance; the safety timer guarantees forward motion
-    // if speech is muted/unsupported or never reports completion.
     let safetyMs: number
-    if (narrator.supported && !narrator.muted) {
+    if (narrator.supported && !muted) {
       const initiatedAt = performance.now()
       narrator.speak(scene.narration, () => {
-        // Ignore a spurious immediate 'end' from the cancel→speak race.
-        if (performance.now() - initiatedAt < 400) return
+        if (performance.now() - initiatedAt < 400) return // ignore spurious early end
         advance()
       })
       safetyMs = estMs + 6000
     } else {
+      narrator.cancel()
       safetyMs = estMs
     }
     const timer = window.setTimeout(advance, safetyMs)
@@ -87,14 +133,16 @@ export function VideoPlayer({ composition, onProgress }: Props) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       clearTimeout(timer)
     }
-    // narrator.speak/cancel are stable; we intentionally key only on these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, playing, narrator.muted, scenes, starts, total])
+  }, [hasAudio, index, playing, muted, scenes, starts, total])
 
   const current = scenes[index]
+  const showMute = hasAudio || narrator.supported
 
   return (
     <div className="absolute inset-0 overflow-hidden select-none" style={{ background: '#05081a' }}>
+
+      {hasAudio && <audio ref={audioRef} src={composition.audioUrl} preload="auto" />}
 
       {/* ── Scene (remounts per id → re-fires entry animations) ─────────── */}
       <div key={current?.id} className="absolute inset-0">
@@ -116,7 +164,7 @@ export function VideoPlayer({ composition, onProgress }: Props) {
         )}
       </button>
 
-      {/* ── Caption track ──────────────────────────────────────────────── */}
+      {/* ── Caption track (hidden for statement beats — text already shown big) ── */}
       <div className="absolute left-0 right-0 z-20 pointer-events-none px-7" style={{ bottom: 34 }}>
         <div className="pointer-events-none" style={{
           background: 'linear-gradient(0deg, rgba(5,8,26,0.92) 0%, rgba(5,8,26,0.6) 70%, transparent 100%)',
@@ -156,11 +204,11 @@ export function VideoPlayer({ composition, onProgress }: Props) {
         {playing
           ? <Pause size={13} fill="rgba(255,255,255,0.6)" style={{ color: 'rgba(255,255,255,0.6)' }} />
           : <Play size={13} fill="rgba(255,255,255,0.6)" style={{ color: 'rgba(255,255,255,0.6)' }} />}
-        {narrator.supported && (
-          <button onClick={(e) => { e.stopPropagation(); narrator.setMuted(!narrator.muted) }}
-            aria-label={narrator.muted ? 'Unmute' : 'Mute'}
+        {showMute && (
+          <button onClick={(e) => { e.stopPropagation(); setMuted((m) => !m) }}
+            aria-label={muted ? 'Unmute' : 'Mute'}
             className="flex items-center justify-center bg-transparent border-none cursor-pointer p-0">
-            {narrator.muted
+            {muted
               ? <VolumeX size={15} style={{ color: 'rgba(255,255,255,0.6)' }} />
               : <Volume2 size={15} style={{ color: 'var(--gold)' }} />}
           </button>

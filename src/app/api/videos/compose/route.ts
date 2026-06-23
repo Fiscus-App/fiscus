@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
 import { generateComposition } from '@/lib/ai/scenegen'
 import { COMPOSITION_VERSION } from '@/lib/video/composition'
+import { synthesizeScript } from '@/lib/video/tts'
 import type { CompositionInput, VideoComposition } from '@/types'
 
 /**
@@ -121,6 +122,15 @@ export async function POST(req: NextRequest) {
     composition = await generateComposition(input)
   } catch {
     return NextResponse.json({ error: 'Composition failed' }, { status: 500 })
+  }
+
+  // Premium voiceover (ElevenLabs), tone-matched. Best-effort and cached with
+  // the composition below, so it's synthesised once per article. No key or any
+  // failure → audioUrl stays empty and the player uses the free browser voice.
+  const synth = await synthesizeScript(composition.script, composition.tone)
+  if (synth) {
+    composition.audioUrl = synth.audioUrl
+    composition.voice = synth.voice
   }
 
   // ── Lock it to the article's canonical Video row (best-effort) ─────────

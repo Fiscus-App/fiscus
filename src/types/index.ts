@@ -248,6 +248,10 @@ export interface VideoComposition {
   script: string
   /** Story voice/register the script was written in (selloff, earnings, …). */
   tone: string
+  /** Premium TTS audio as a data URL, when generated; else undefined → browser voice. */
+  audioUrl?: string
+  /** Label of the premium voice used (e.g. "Antoni"), when audio is present. */
+  voice?: string
   totalDurationMs: number
   scenes: VideoScene[]
   /** Honest provenance: built by the model, or by the deterministic fallback. */
