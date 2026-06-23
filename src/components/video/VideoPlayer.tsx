@@ -1,130 +1,95 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Pause, RotateCcw, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Play, Pause, Volume2, VolumeX } from 'lucide-react'
 import { SceneRenderer } from './Scenes'
 import { useNarration } from '@/lib/video/useNarration'
 import type { VideoComposition } from '@/types'
 
 interface Props {
   composition: VideoComposition
-  /** Begin playing as soon as it mounts. */
-  autoPlay?: boolean
-  /** Start with voiceover muted (used for scroll-autoplay; visuals + captions still play). */
-  startMuted?: boolean
-  /** Fired once the composition reaches the end. */
-  onEnded?: () => void
-  /** Fired on every frame with overall progress 0..1 (for watch tracking). */
+  /** Fired on every frame with overall progress 0..1 (for the card's bar). */
   onProgress?: (fraction: number, elapsedMs: number) => void
 }
 
 /**
- * Plays a VideoComposition as a timed sequence of scenes.
+ * Plays a VideoComposition as a continuous, looping briefing.
  *
- * The clock is a single elapsed-ms value advanced by requestAnimationFrame.
- * It is deliberately isolated in one place: when real TTS narration arrives,
- * swap the rAF source for an <audio> element's `currentTime` and everything
- * else — scene selection, captions, progress — keeps working unchanged.
+ * The SPEECH drives the timeline: each scene holds until its narration line
+ * actually finishes (utterance `onend`), then advances — so a line is never
+ * cut off mid-sentence by a fixed timer. After the last scene it loops back to
+ * the start. A generous safety timer + token guards keep the visuals moving
+ * even when speech is muted, unsupported, or misbehaves.
  */
-export function VideoPlayer({ composition, autoPlay = true, startMuted = false, onEnded, onProgress }: Props) {
+export function VideoPlayer({ composition, onProgress }: Props) {
   const { scenes } = composition
 
-  // Cumulative scene start times + total, derived once per composition.
   const { starts, total } = useMemo(() => {
     const s: number[] = []
     let acc = 0
-    for (const scene of scenes) {
-      s.push(acc)
-      acc += scene.durationMs
-    }
+    for (const sc of scenes) { s.push(acc); acc += sc.durationMs }
     return { starts: s, total: Math.max(acc, 1) }
   }, [scenes])
 
-  const [playing, setPlaying] = useState(autoPlay)
-  const [ended, setEnded] = useState(false)
   const [index, setIndex] = useState(0)
+  const [playing, setPlaying] = useState(true) // instant autoplay
   const [sceneFraction, setSceneFraction] = useState(0)
+  const narrator = useNarration(false) // voiced by default — no unmute needed
 
-  const narrator = useNarration(startMuted)
-
-  const elapsedRef = useRef(0)
-  const lastTsRef = useRef<number | null>(null)
+  const tokenRef = useRef(0)
   const rafRef = useRef<number | null>(null)
-  const onEndedRef = useRef(onEnded)
   const onProgressRef = useRef(onProgress)
-  onEndedRef.current = onEnded
   onProgressRef.current = onProgress
 
-  const sceneAt = useCallback((elapsed: number) => {
-    let i = starts.length - 1
-    for (let k = 0; k < starts.length; k++) {
-      if (elapsed < starts[k] + scenes[k].durationMs) { i = k; break }
-    }
-    const within = (elapsed - starts[i]) / scenes[i].durationMs
-    return { i, within: Math.min(Math.max(within, 0), 1) }
-  }, [starts, scenes])
-
-  // ── The clock ──────────────────────────────────────────────────────────
+  // ── Master loop ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!playing) return
-    const frame = (ts: number) => {
-      if (lastTsRef.current == null) lastTsRef.current = ts
-      elapsedRef.current += ts - lastTsRef.current
-      lastTsRef.current = ts
+    if (!playing) { narrator.cancel(); return }
+    const scene = scenes[index]
+    if (!scene) return
+    const myToken = ++tokenRef.current
+    setSceneFraction(0)
 
-      const elapsed = elapsedRef.current
-      onProgressRef.current?.(Math.min(elapsed / total, 1), elapsed)
-
-      if (elapsed >= total) {
-        const last = scenes.length - 1
-        setIndex(last)
-        setSceneFraction(1)
-        setPlaying(false)
-        setEnded(true)
-        onEndedRef.current?.()
-        return
-      }
-      const { i, within } = sceneAt(elapsed)
-      setIndex(i)
-      setSceneFraction(within)
-      rafRef.current = requestAnimationFrame(frame)
+    const advance = () => {
+      if (tokenRef.current !== myToken) return // stale callback
+      setIndex((i) => (i + 1) % scenes.length) // …loops at the end
     }
-    rafRef.current = requestAnimationFrame(frame)
+
+    // Smooth per-scene progress (visual only) + overall progress callback.
+    const startTs = performance.now()
+    const estMs = scene.durationMs
+    const tick = (now: number) => {
+      if (tokenRef.current !== myToken) return
+      const f = Math.min((now - startTs) / estMs, 1)
+      setSceneFraction(f)
+      const elapsed = starts[index] + f * estMs
+      onProgressRef.current?.(Math.min(elapsed / total, 1), elapsed)
+      if (f < 1) rafRef.current = requestAnimationFrame(tick)
+    }
+    rafRef.current = requestAnimationFrame(tick)
+
+    // Voice drives the real advance; the safety timer guarantees forward motion
+    // if speech is muted/unsupported or never reports completion.
+    let safetyMs: number
+    if (narrator.supported && !narrator.muted) {
+      const initiatedAt = performance.now()
+      narrator.speak(scene.narration, () => {
+        // Ignore a spurious immediate 'end' from the cancel→speak race.
+        if (performance.now() - initiatedAt < 400) return
+        advance()
+      })
+      safetyMs = estMs + 6000
+    } else {
+      safetyMs = estMs
+    }
+    const timer = window.setTimeout(advance, safetyMs)
+
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      lastTsRef.current = null
+      clearTimeout(timer)
     }
-  }, [playing, total, scenes, sceneAt])
-
-  // ── Voiceover ────────────────────────────────────────────────────────────
-  // Speak the current scene's line. We cancel + re-speak on each change (scene
-  // advance, pause→play, mute toggle) rather than using the browser's flaky
-  // speech pause/resume. Goes silent when paused, ended, or muted.
-  useEffect(() => {
-    if (!playing || narrator.muted) { narrator.cancel(); return }
-    narrator.speak(scenes[index]?.narration ?? '')
+    // narrator.speak/cancel are stable; we intentionally key only on these.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, playing, narrator.muted])
-
-  const toggle = useCallback(() => {
-    if (ended) { // replay
-      elapsedRef.current = 0
-      setEnded(false)
-      setIndex(0)
-      setSceneFraction(0)
-      setPlaying(true)
-      return
-    }
-    setPlaying((p) => !p)
-  }, [ended])
-
-  const seekToScene = useCallback((i: number) => {
-    elapsedRef.current = starts[i]
-    setEnded(false)
-    setIndex(i)
-    setSceneFraction(0)
-    setPlaying(true)
-  }, [starts])
+  }, [index, playing, narrator.muted, scenes, starts, total])
 
   const current = scenes[index]
 
@@ -136,8 +101,8 @@ export function VideoPlayer({ composition, autoPlay = true, startMuted = false, 
         {current && <SceneRenderer visual={current.visual} accent={composition.accent} />}
       </div>
 
-      {/* ── Tap layer: play / pause / replay ───────────────────────────── */}
-      <button onClick={toggle} aria-label={playing ? 'Pause' : 'Play'}
+      {/* ── Tap to pause / resume ──────────────────────────────────────── */}
+      <button onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause' : 'Play'}
         className="absolute inset-0 z-10 flex items-center justify-center bg-transparent border-none cursor-pointer">
         {!playing && (
           <span className="flex items-center justify-center rounded-full"
@@ -146,16 +111,13 @@ export function VideoPlayer({ composition, autoPlay = true, startMuted = false, 
               border: '2px solid rgba(232,184,75,0.55)', backdropFilter: 'blur(12px)',
               boxShadow: '0 0 30px rgba(232,184,75,0.22)',
             }}>
-            {ended
-              ? <RotateCcw size={26} style={{ color: 'var(--gold)' }} />
-              : <Play size={26} fill="var(--gold)" style={{ color: 'var(--gold)', marginLeft: 4 }} />}
+            <Play size={26} fill="var(--gold)" style={{ color: 'var(--gold)', marginLeft: 4 }} />
           </span>
         )}
       </button>
 
       {/* ── Caption track ──────────────────────────────────────────────── */}
-      <div className="absolute left-0 right-0 z-20 pointer-events-none px-7"
-        style={{ bottom: 34 }}>
+      <div className="absolute left-0 right-0 z-20 pointer-events-none px-7" style={{ bottom: 34 }}>
         <div className="pointer-events-none" style={{
           background: 'linear-gradient(0deg, rgba(5,8,26,0.92) 0%, rgba(5,8,26,0.6) 70%, transparent 100%)',
           margin: '0 -28px', padding: '24px 28px 6px',
@@ -173,23 +135,18 @@ export function VideoPlayer({ composition, autoPlay = true, startMuted = false, 
         </div>
       </div>
 
-      {/* ── Segmented progress (one bar per scene, click to seek) ───────── */}
+      {/* ── Segmented progress (one bar per scene) ─────────────────────── */}
       <div className="absolute left-0 right-0 z-30 flex gap-1 px-3" style={{ bottom: 14 }}>
         {scenes.map((s, i) => {
           const fill = i < index ? 1 : i > index ? 0 : sceneFraction
           return (
-            <button key={s.id} onClick={(e) => { e.stopPropagation(); seekToScene(i) }}
-              aria-label={`Scene ${i + 1}`}
-              className="flex-1 rounded-full overflow-hidden bg-transparent border-none cursor-pointer p-0"
-              style={{ height: 3 }}>
-              <span className="block w-full h-full rounded-full" style={{ background: 'rgba(255,255,255,0.18)' }}>
-                <span className="block h-full rounded-full" style={{
-                  width: `${fill * 100}%`,
-                  background: 'linear-gradient(90deg, var(--gold), rgba(232,184,75,0.55))',
-                  transition: i === index && playing ? 'width 0.1s linear' : 'none',
-                }} />
-              </span>
-            </button>
+            <span key={s.id} className="flex-1 rounded-full overflow-hidden" style={{ height: 3, background: 'rgba(255,255,255,0.18)' }}>
+              <span className="block h-full rounded-full" style={{
+                width: `${fill * 100}%`,
+                background: 'linear-gradient(90deg, var(--gold), rgba(232,184,75,0.55))',
+                transition: i === index && playing ? 'width 0.1s linear' : 'none',
+              }} />
+            </span>
           )
         })}
       </div>

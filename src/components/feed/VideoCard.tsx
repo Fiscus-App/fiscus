@@ -29,7 +29,6 @@ export function VideoCard({ item, height, active = false, onInsightful, onSave, 
   const [composing, setComposing]       = useState(false)
   const [composition, setComposition]   = useState<VideoComposition | null>(null)
   const [progress, setProgress]         = useState(0)
-  const [startMuted, setStartMuted]     = useState(false)
 
   const isUp       = item.change != null && item.change >= 0
   const chartColor = item.change != null ? (isUp ? '#2ed494' : '#ff5252') : '#5b8af5'
@@ -37,8 +36,7 @@ export function VideoCard({ item, height, active = false, onInsightful, onSave, 
   const displayScript = aiDone && aiScript ? aiScript : item.script
 
   // ── Open the AI video: compose on demand, then play ─────────────────────────
-  const openPlayer = useCallback(async (opts?: { muted?: boolean }) => {
-    setStartMuted(opts?.muted ?? false)
+  const openPlayer = useCallback(async () => {
     if (composition) { setPlayerOpen(true); return }
     if (composing) return
     setComposing(true)
@@ -66,15 +64,13 @@ export function VideoCard({ item, height, active = false, onInsightful, onSave, 
     }
   }, [composition, composing, item])
 
-  // ── Scroll-autoplay: play (muted) when this becomes the in-view card, ───────
-  //    stop when it scrolls away. A short settle delay avoids firing on fast
-  //    fly-by scrolls. Manual Play (below) opens with sound instead.
+  // ── Scroll-autoplay: the in-view card starts instantly (voiced), and stops
+  //    when it scrolls away. No click, no unmute, no settle delay.
   const openPlayerRef = useRef(openPlayer)
   openPlayerRef.current = openPlayer
   useEffect(() => {
     if (!active) { setPlayerOpen(false); return }
-    const t = setTimeout(() => openPlayerRef.current({ muted: true }), 350)
-    return () => clearTimeout(t)
+    openPlayerRef.current()
   }, [active])
 
   // ── AI script stream ──────────────────────────────────────────────────────
@@ -214,7 +210,7 @@ export function VideoCard({ item, height, active = false, onInsightful, onSave, 
 
       {/* ══ CENTRE PLAY BUTTON ════════════════════════════════════════════ */}
       {!playerOpen && (
-        <button onClick={() => openPlayer({ muted: false })} disabled={composing} aria-label="Play AI video"
+        <button onClick={() => openPlayer()} disabled={composing} aria-label="Play AI video"
           className="absolute flex items-center justify-center rounded-full z-10"
           style={{
             top: '42%', left: '50%', transform: 'translate(-50%, -50%)',
@@ -389,10 +385,7 @@ export function VideoCard({ item, height, active = false, onInsightful, onSave, 
       {playerOpen && composition && (
         <div className="absolute inset-0 z-40">
           <VideoPlayer
-            key={startMuted ? 'auto' : 'manual'}
             composition={composition}
-            autoPlay
-            startMuted={startMuted}
             onProgress={(f) => setProgress(f * 100)}
           />
           <button onClick={() => setPlayerOpen(false)} aria-label="Close video"

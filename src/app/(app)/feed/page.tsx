@@ -71,7 +71,9 @@ export default function FeedPage() {
         let best: string | null = null
         let bestRatio = 0
         ratiosRef.current.forEach((r, id) => { if (r > bestRatio) { bestRatio = r; best = id } })
-        setActiveId(bestRatio >= 0.6 ? best : null)
+        // Hysteresis: keep the current card active until another clearly
+        // dominates (≥0.5), so a mid-scroll dip never closes the player.
+        setActiveId((prev) => (bestRatio >= 0.5 ? best : prev))
       },
       { root, threshold: [0, 0.6, 0.9] },
     )

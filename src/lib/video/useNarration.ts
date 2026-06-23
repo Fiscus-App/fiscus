@@ -7,8 +7,9 @@ export interface Narrator {
   supported: boolean
   muted: boolean
   setMuted: (m: boolean) => void
-  /** Speak a line now, cancelling anything already in flight. */
-  speak: (text: string) => void
+  /** Speak a line now, cancelling anything already in flight. `onEnd` fires
+   *  when the line finishes (or errors), so the caller can advance. */
+  speak: (text: string, onEnd?: () => void) => void
   /** Stop all speech immediately. */
   cancel: () => void
   /** Kept for a future audio-file backend; Web Speech pause/resume is flaky. */
@@ -60,16 +61,23 @@ export function useNarration(initialMuted = false): Narrator {
     window.speechSynthesis.cancel()
   }, [])
 
-  const speak = useCallback((text: string) => {
+  const speak = useCallback((text: string, onEnd?: () => void) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
     if (mutedRef.current || !text.trim()) return
-    window.speechSynthesis.cancel() // never overlap two lines
+    const synth = window.speechSynthesis
+    synth.cancel() // clear anything pending/queued
     const u = new SpeechSynthesisUtterance(text)
     if (voiceRef.current) u.voice = voiceRef.current
     u.rate = 1.0
     u.pitch = 1.0
     u.volume = 1.0
-    window.speechSynthesis.speak(u)
+    if (onEnd) {
+      u.onend = () => onEnd()
+      u.onerror = () => onEnd() // an error shouldn't stall the timeline
+    }
+    // Defer the speak by a tick: calling speak() in the same frame as cancel()
+    // triggers a Chrome bug where the new utterance fires 'end' immediately.
+    window.setTimeout(() => synth.speak(u), 60)
   }, [])
 
   const pause = useCallback(() => {
