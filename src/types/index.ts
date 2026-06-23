@@ -163,13 +163,19 @@ export interface ScriptGenerationInput {
 // an auto-built visual (a stat card, a chart, a pulled quote…). This renders
 // client-side today; the same contract drives a server-side MP4 render later.
 
-export type SceneKind = 'title' | 'stat' | 'chart' | 'bullets' | 'quote' | 'outro'
+export type SceneKind = 'title' | 'statement' | 'stat' | 'chart' | 'bullets' | 'quote' | 'outro'
 
 export interface TitleVisual {
   type: 'title'
   headline: string
   ticker?: string
   sector?: string
+}
+
+export interface StatementVisual {
+  type: 'statement'
+  /** One spoken sentence of the flowing script, shown as cinematic text. */
+  text: string
 }
 
 export interface StatVisual {
@@ -214,6 +220,7 @@ export interface OutroVisual {
 
 export type SceneVisual =
   | TitleVisual
+  | StatementVisual
   | StatVisual
   | ChartVisual
   | BulletsVisual
@@ -237,6 +244,10 @@ export interface VideoComposition {
   sector: string
   /** Hex accent (sector colour) used to theme the whole video. */
   accent: string
+  /** The full flowing narration as one paragraph (sum of scene narrations). */
+  script: string
+  /** Story voice/register the script was written in (selloff, earnings, …). */
+  tone: string
   totalDurationMs: number
   scenes: VideoScene[]
   /** Honest provenance: built by the model, or by the deterministic fallback. */

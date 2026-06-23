@@ -131,37 +131,47 @@ async function run() {
 
   console.log(`\nNarration eval — generator: ${hasKey ? 'REAL MODEL (Anthropic)' : 'FALLBACK (no API key)'}\n${'='.repeat(78)}`)
 
-  const narrations: { type: string; text: string; tokens: Set<string> }[] = []
-  let pass = { noIntroOutro: 0, noSource: 0, noHeadline: 0, diffCaption: 0, hasFigures: 0, inWordBand: 0 }
+  const BANNED = [
+    'according to the report', 'the article states', 'in today', 'here\'s what happened',
+    'investors are watching', 'this comes as', 'that\'s the update',
+  ]
+
+  const narrations: { type: string; tone: string; text: string; tokens: Set<string> }[] = []
+  const pass = { noIntroOutro: 0, noSource: 0, noHeadline: 0, diffCaption: 0, hasFigures: 0, inWordBand: 0, onePara: 0, noBanned: 0 }
 
   for (const s of SAMPLES) {
     const input: CompositionInput = { ...s, sectorColor: '#5b8af5' }
     const comp = await generate(input)
-    const narration = comp.scenes.map((sc) => sc.narration).join(' ')
+    const script = comp.script // the full flowing paragraph
     const kinds = comp.scenes.map((sc) => sc.visual.type)
+    const lower = script.toLowerCase()
 
     const introOutro = kinds.some((k) => k === 'title' || k === 'outro')
-    const sourceMention = new RegExp(`\\b(source|via fiscus|${s.source.split(/\s+/)[0]})\\b`, 'i').test(narration)
-    const headlineOverlap = jaccard(contentTokens(narration), contentTokens(s.headline))
-    const captionOverlap = jaccard(contentTokens(narration), contentTokens(s.summary))
+    const sourceMention = new RegExp(`\\b(source|via fiscus|${s.source.split(/\s+/)[0]})\\b`, 'i').test(script)
+    const headlineOverlap = jaccard(contentTokens(script), contentTokens(s.headline))
+    const captionOverlap = jaccard(contentTokens(script), contentTokens(s.summary))
     const artNums = new Set(numbers(s.bodyText ?? ''))
-    const narrNums = numbers(narration)
+    const narrNums = numbers(script)
     const numHits = narrNums.filter((n) => artNums.has(n)).length
-    const wc = wordCount(narration)
+    const wc = wordCount(script)
+    const onePara = !/\n|•|^\s*[-*]\s/m.test(script)
+    const bannedHit = BANNED.find((b) => lower.includes(b))
 
     if (!introOutro) pass.noIntroOutro++
     if (!sourceMention) pass.noSource++
     if (headlineOverlap < 0.5) pass.noHeadline++
     if (captionOverlap < 0.5) pass.diffCaption++
     if (numHits >= 2) pass.hasFigures++
-    if (wc >= 30 && wc <= 60) pass.inWordBand++
+    if (wc >= 50 && wc <= 80) pass.inWordBand++
+    if (onePara) pass.onePara++
+    if (!bannedHit) pass.noBanned++
 
-    narrations.push({ type: s.type, text: narration, tokens: contentTokens(narration) })
+    narrations.push({ type: s.type, tone: comp.tone, text: script, tokens: contentTokens(script) })
 
-    console.log(`\n▸ ${s.type}  [${s.ticker}]  gen=${comp.generator}  scenes=${kinds.join('>')}`)
-    console.log(`  words=${wc}  figs(narr/hits)=${narrNums.length}/${numHits}  vsCaption=${captionOverlap.toFixed(2)}  vsHeadline=${headlineOverlap.toFixed(2)}  src=${sourceMention ? 'YES' : 'no'}  intro/outro=${introOutro ? 'YES' : 'no'}`)
-    console.log(`  caption : ${s.summary}`)
-    console.log(`  narration: ${narration}`)
+    console.log(`\n▸ ${s.type}  [${s.ticker}]  gen=${comp.generator}  tone=${comp.tone}  beats=${kinds.join('>')}`)
+    console.log(`  words=${wc}  figs(narr/hits)=${narrNums.length}/${numHits}  vsCaption=${captionOverlap.toFixed(2)}  vsHeadline=${headlineOverlap.toFixed(2)}  src=${sourceMention ? 'YES' : 'no'}  1para=${onePara ? 'yes' : 'NO'}  banned=${bannedHit ?? 'none'}`)
+    console.log(`  caption: ${s.summary}`)
+    console.log(`  script : ${script}`)
   }
 
   // Cross-article distinctness (lower average overlap = more varied).
@@ -169,17 +179,21 @@ async function run() {
   for (let i = 0; i < narrations.length; i++)
     for (let j = i + 1; j < narrations.length; j++) { sum += jaccard(narrations[i].tokens, narrations[j].tokens); pairs++ }
   const avgPairOverlap = pairs ? sum / pairs : 0
+  const distinctTones = new Set(narrations.map((x) => x.tone)).size
 
   const n = SAMPLES.length
   const line = (label: string, got: number, of = n) => `  ${got === of ? 'PASS' : got >= of - 1 ? 'WARN' : 'FAIL'}  ${label}: ${got}/${of}`
-  console.log(`\n${'='.repeat(78)}\nVerification summary (${n} articles)`)
-  console.log(line('No intro/outro scenes', pass.noIntroOutro))
-  console.log(line('No source named in narration', pass.noSource))
-  console.log(line('Does not restate the headline', pass.noHeadline))
-  console.log(line('Materially different from caption', pass.diffCaption))
+  console.log(`\n${'='.repeat(78)}\nV2 verification summary (${n} articles)`)
+  console.log(line('No intro/outro', pass.noIntroOutro))
+  console.log(line('No source named', pass.noSource))
+  console.log(line('Does not restate headline', pass.noHeadline))
+  console.log(line('Different from caption', pass.diffCaption))
   console.log(line('Surfaces ≥2 real figures', pass.hasFigures))
-  console.log(line('Narration 30–60 words', pass.inWordBand))
-  console.log(`  ${avgPairOverlap < 0.3 ? 'PASS' : 'WARN'}  Cross-article distinctness (avg pair overlap ${avgPairOverlap.toFixed(2)}, want <0.30)`)
+  console.log(line('Script 50–80 words', pass.inWordBand))
+  console.log(line('Single paragraph (no lists)', pass.onePara))
+  console.log(line('No banned phrases', pass.noBanned))
+  console.log(`  ${avgPairOverlap < 0.3 ? 'PASS' : 'WARN'}  Cross-article distinctness (avg overlap ${avgPairOverlap.toFixed(2)}, want <0.30)`)
+  console.log(`  ${distinctTones >= 3 ? 'PASS' : 'INFO'}  Voice varies by type (${distinctTones} distinct tones; fallback is always 'neutral')`)
   console.log('')
 }
 

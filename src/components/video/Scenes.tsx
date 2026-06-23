@@ -5,6 +5,7 @@ import { Quote as QuoteIcon, TrendingUp, TrendingDown } from 'lucide-react'
 import type {
   SceneVisual,
   TitleVisual,
+  StatementVisual,
   StatVisual,
   ChartVisual,
   BulletsVisual,
@@ -30,6 +31,20 @@ function Stage({ accent, children }: { accent: string; children: React.ReactNode
         {children}
       </div>
     </div>
+  )
+}
+
+// ─── Statement (narrative beat — the spoken line is the visual) ──────────
+function StatementScene({ v, accent }: { v: StatementVisual; accent: string }) {
+  return (
+    <Stage accent={accent}>
+      <p className="font-serif font-medium" style={{
+        fontSize: 25, lineHeight: 1.32, letterSpacing: '-0.01em',
+        color: '#eef2ff', textShadow: '0 2px 30px rgba(0,0,0,0.85)', maxWidth: '94%',
+      }}>
+        {v.text}
+      </p>
+    </Stage>
   )
 }
 
@@ -184,6 +199,7 @@ function OutroScene({ v, accent }: { v: OutroVisual; accent: string }) {
 // ─── Renderer ───────────────────────────────────────────────────────────
 export function SceneRenderer({ visual, accent }: { visual: SceneVisual; accent: string }) {
   switch (visual.type) {
+    case 'statement': return <StatementScene v={visual} accent={accent} />
     case 'title':   return <TitleScene v={visual} accent={accent} />
     case 'stat':    return <StatScene v={visual} accent={accent} />
     case 'chart':   return <ChartScene v={visual} accent={accent} />

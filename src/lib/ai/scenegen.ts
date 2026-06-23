@@ -52,10 +52,10 @@ export async function generateComposition(
 
     const raw = message.content[0]?.type === 'text' ? message.content[0].text : ''
     const parsed = aiCompositionSchema.parse(extractJson(raw))
-    const composition = normalizeComposition(input, parsed.scenes, 'ai')
+    const composition = normalizeComposition(input, parsed.scenes, 'ai', parsed.tone ?? 'neutral')
 
     // A degenerate plan (everything dropped) is worse than the fallback.
-    if (composition.scenes.length < 2) return buildFallbackComposition(input)
+    if (composition.scenes.length === 0) return buildFallbackComposition(input)
     return composition
   } catch {
     return buildFallbackComposition(input)

@@ -9,12 +9,13 @@ import type {
 // ─── Tunables ───────────────────────────────────────────────────────────
 // Per-scene timing. Scene length tracks its narration length, so when real
 // TTS audio arrives the visual timeline already matches the spoken duration.
-export const COMPOSITION_VERSION = 1
-const MS_PER_WORD = 360 // ≈ 167 wpm — calm, institutional pace
+export const COMPOSITION_VERSION = 2 // v2: conversational, story-first script
+const MS_PER_WORD = 360 // ≈ 167 wpm — natural commentator pace
 const BASE_PAD_MS = 650
 
 const DURATION_BOUNDS: Record<SceneVisual['type'], { min: number; max: number }> = {
   title: { min: 2600, max: 5000 },
+  statement: { min: 2600, max: 6500 },
   stat: { min: 2600, max: 5000 },
   chart: { min: 3200, max: 6000 },
   bullets: { min: 3600, max: 7000 },
@@ -49,7 +50,7 @@ function inferPositive(series: number[]): boolean {
 // chart series are NEVER taken from the model — only real data is attached
 // later — so the AI can request a chart but cannot invent prices.
 const aiSceneSchema = z.object({
-  kind: z.enum(['title', 'stat', 'chart', 'bullets', 'quote', 'outro']),
+  kind: z.enum(['title', 'statement', 'stat', 'chart', 'bullets', 'quote', 'outro']),
   narration: z.string().min(1),
   headline: z.string().optional(),
   ticker: z.string().optional(),
@@ -66,7 +67,8 @@ const aiSceneSchema = z.object({
 })
 
 export const aiCompositionSchema = z.object({
-  scenes: z.array(aiSceneSchema).min(2).max(8),
+  tone: z.string().optional(),
+  scenes: z.array(aiSceneSchema).min(1).max(8),
 })
 
 export type AiScene = z.infer<typeof aiSceneSchema>
@@ -79,6 +81,7 @@ export function normalizeComposition(
   input: CompositionInput,
   aiScenes: AiScene[],
   generator: 'ai' | 'fallback',
+  tone = 'neutral',
 ): VideoComposition {
   const realSeries = input.series && input.series.length >= 2 ? input.series : null
   const scenes: VideoScene[] = []
@@ -86,19 +89,23 @@ export function normalizeComposition(
   aiScenes.forEach((s, i) => {
     // No intro/outro: the headline, source and ticker are already shown in the
     // UI, so drop any title/outro scene the model emits, plus bare source or
-    // sign-off lines. Every second of the clip must carry article content.
+    // sign-off lines. Every beat must carry the story.
     if (s.kind === 'title' || s.kind === 'outro') return
-    if (isSourceOrSignoff(s.narration)) return
-    const visual = buildVisual(s, input, realSeries)
-    if (!visual) return // e.g. chart requested but no real data
+    const narration = s.narration.trim()
+    if (isSourceOrSignoff(narration)) return
+    // Build the requested visual; if it can't be built (missing figure, no real
+    // series, …) keep the spoken line as a clean statement, so the flowing
+    // script is never broken by a dropped beat.
+    const visual = buildVisual(s, input, realSeries) ?? { type: 'statement' as const, text: narration }
     scenes.push({
-      id: `${input.articleId ?? 'comp'}-${i}-${s.kind}`,
-      narration: s.narration.trim(),
-      durationMs: durationFor(visual.type, s.narration),
+      id: `${input.articleId ?? 'comp'}-${i}-${visual.type}`,
+      narration,
+      durationMs: durationFor(visual.type, narration),
       visual,
     })
   })
 
+  const script = scenes.map((s) => s.narration).join(' ')
   const totalDurationMs = scenes.reduce((sum, s) => sum + s.durationMs, 0)
 
   return {
@@ -107,6 +114,8 @@ export function normalizeComposition(
     ticker: input.ticker,
     sector: input.sector,
     accent: input.sectorColor,
+    script,
+    tone,
     totalDurationMs,
     scenes,
     generator,
@@ -120,6 +129,8 @@ function buildVisual(
   realSeries: number[] | null,
 ): SceneVisual | null {
   switch (s.kind) {
+    case 'statement':
+      return { type: 'statement', text: s.text?.trim() || s.narration.trim() }
     case 'title':
       return {
         type: 'title',
@@ -201,15 +212,9 @@ function pickBriefingSentences(text: string, maxWords = 45): string[] {
     if (chosen.length > 0 && words + w > maxWords) break
     chosen.push({ s: c.s, i: c.i })
     words += w
-    if (chosen.length >= 3) break
+    if (chosen.length >= 4) break
   }
   return chosen.sort((a, b) => a.i - b.i).map((x) => x.s)
-}
-
-/** Compress a sentence into a short on-screen bullet. */
-function toBullet(s: string): string {
-  const words = s.replace(/[.;:]+$/, '').split(/\s+/)
-  return words.length <= 9 ? words.join(' ') : words.slice(0, 9).join(' ') + '…'
 }
 
 // ─── Deterministic fallback ─────────────────────────────────────────────
@@ -221,19 +226,14 @@ export function buildFallbackComposition(input: CompositionInput): VideoComposit
   const hasStat = input.price != null
   const hasChart = !!(input.series && input.series.length >= 2)
 
-  // Lead with the substance: the densest, figure-bearing sentences from the
-  // body (or summary) — NOT a restated headline or a source credit. Trim the
-  // word budget to leave room for the stat/chart beats and hit ~15 seconds.
+  // Narrative beats: the densest, figure-bearing sentences from the body (or
+  // summary), each shown as a clean statement. Word budget keeps the whole
+  // script in the 50–80 word band, leaving room for the stat/chart beats.
   const sourceText = input.bodyText && input.bodyText.trim().length > 40 ? input.bodyText : input.summary
-  const budget = 50 - (hasStat ? 10 : 0) - (hasChart ? 9 : 0)
-  const sentences = pickBriefingSentences(sourceText || input.summary || input.headline, Math.max(24, budget))
-  if (sentences.length > 0) {
-    scenes.push({
-      kind: 'bullets',
-      narration: sentences.join(' '),
-      heading: 'Key points',
-      points: sentences.map(toBullet),
-    })
+  const budget = 80 - (hasStat ? 12 : 0) - (hasChart ? 11 : 0)
+  const sentences = pickBriefingSentences(sourceText || input.summary || input.headline, Math.max(34, budget))
+  for (const sentence of sentences) {
+    scenes.push({ kind: 'statement', narration: sentence })
   }
 
   // Market reaction: real, live price/move (never invented).
@@ -246,22 +246,20 @@ export function buildFallbackComposition(input: CompositionInput): VideoComposit
       value: formatPrice(input.price!),
       label: `${input.ticker} · last`,
       delta: input.change ?? null,
-      caption: input.change != null ? `${formatDelta(input.change)} today` : undefined,
     })
   }
 
   // Trend: a data-driven line from the real series (no generic filler).
   if (hasChart) {
-    scenes.push({ kind: 'chart', narration: seriesMoveLine(input.series!), label: `${input.ticker} · recent` })
+    scenes.push({ kind: 'chart', narration: seriesMoveLine(input.series!) })
   }
 
-  // Guarantee at least one content scene.
+  // Guarantee at least one beat.
   if (scenes.length === 0) {
-    const line = input.summary || input.headline
-    scenes.push({ kind: 'bullets', narration: line, points: [toBullet(line)] })
+    scenes.push({ kind: 'statement', narration: input.summary || input.headline })
   }
 
-  return normalizeComposition(input, scenes, 'fallback')
+  return normalizeComposition(input, scenes, 'fallback', 'neutral')
 }
 
 /** Factual one-liner describing the move across a real price series. */

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, dbAvailable } from '@/lib/db'
 import { generateComposition } from '@/lib/ai/scenegen'
+import { COMPOSITION_VERSION } from '@/lib/video/composition'
 import type { CompositionInput, VideoComposition } from '@/types'
 
 /**
@@ -30,9 +31,13 @@ function isMissingColumn(err: unknown): boolean {
 
 function asComposition(raw: unknown): VideoComposition | null {
   const obj = typeof raw === 'string' ? safeParse(raw) : raw
-  if (obj && typeof obj === 'object' && Array.isArray((obj as VideoComposition).scenes)) {
+  if (obj && typeof obj === 'object') {
     const comp = obj as VideoComposition
-    if (comp.scenes.length >= 2) return comp
+    // Only serve a cached composition built by the CURRENT engine version —
+    // older versions (e.g. the pre-V2 scripts) are regenerated and re-stored.
+    if (Array.isArray(comp.scenes) && comp.scenes.length >= 1 && comp.version === COMPOSITION_VERSION) {
+      return comp
+    }
   }
   return null
 }

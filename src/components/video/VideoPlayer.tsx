@@ -122,7 +122,7 @@ export function VideoPlayer({ composition, onProgress }: Props) {
           background: 'linear-gradient(0deg, rgba(5,8,26,0.92) 0%, rgba(5,8,26,0.6) 70%, transparent 100%)',
           margin: '0 -28px', padding: '24px 28px 6px',
         }}>
-          {current && (
+          {current && current.visual.type !== 'statement' && (
             <p key={`cap-${current.id}`} className="font-sans font-medium text-center mx-auto"
               style={{
                 fontSize: 14.5, lineHeight: 1.45, maxWidth: 460,

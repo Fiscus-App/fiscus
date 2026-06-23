@@ -25,94 +25,97 @@ const baseInput: CompositionInput = {
 }
 
 const kindsOf = (c: VideoComposition) => c.scenes.map((s) => s.visual.type)
-const narrationOf = (c: VideoComposition) => c.scenes.map((s) => s.narration).join(' ')
+const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length
 
-describe('buildFallbackComposition (content-only, no intro/outro)', () => {
-  it('contains NO title or outro scene', () => {
+describe('buildFallbackComposition (V2: story beats, no intro/outro)', () => {
+  it('contains no title or outro scene', () => {
     const kinds = kindsOf(buildFallbackComposition(baseInput))
     expect(kinds).not.toContain('title')
     expect(kinds).not.toContain('outro')
-    expect(kinds.length).toBeGreaterThanOrEqual(2)
+    expect(kinds.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('opens on content, not a title card', () => {
-    expect(['stat', 'chart', 'bullets', 'quote']).toContain(kindsOf(buildFallbackComposition(baseInput))[0])
+  it('uses statement beats for narrative lines', () => {
+    expect(kindsOf(buildFallbackComposition(baseInput))).toContain('statement')
   })
 
-  it('narration does not repeat the headline or name the source', () => {
-    const narration = narrationOf(buildFallbackComposition(baseInput)).toLowerCase()
-    expect(narration).not.toContain(baseInput.headline.toLowerCase())
-    expect(narration).not.toContain('source:')
-    expect(narration).not.toContain('via fiscus')
-  })
-
-  it('surfaces real figures from the article body', () => {
-    expect(/\d/.test(narrationOf(buildFallbackComposition(baseInput)))).toBe(true)
-  })
-
-  it('total duration equals the sum of scene durations', () => {
+  it('builds a non-empty flowing script that surfaces real figures', () => {
     const c = buildFallbackComposition(baseInput)
-    const sum = c.scenes.reduce((a, s) => a + s.durationMs, 0)
-    expect(c.totalDurationMs).toBe(sum)
-    expect(c.totalDurationMs).toBeGreaterThan(6000)
+    expect(c.script.length).toBeGreaterThan(0)
+    expect(wordCount(c.script)).toBeGreaterThan(30)
+    expect(/\d/.test(c.script)).toBe(true)
   })
 
-  it('omits stat and chart when no real price/series (no ghost data)', () => {
+  it('script does not restate the headline or name the source', () => {
+    const script = buildFallbackComposition(baseInput).script.toLowerCase()
+    expect(script).not.toContain(baseInput.headline.toLowerCase())
+    expect(script).not.toContain('source:')
+    expect(script).not.toContain('via fiscus')
+  })
+
+  it('omits stat and chart when there is no real price/series', () => {
     const kinds = kindsOf(
       buildFallbackComposition({ ...baseInput, price: null, change: null, series: null }),
     )
     expect(kinds).not.toContain('stat')
     expect(kinds).not.toContain('chart')
-    expect(kinds).not.toContain('title')
-    expect(kinds).not.toContain('outro')
   })
 
-  it('is tagged with version + fallback provenance', () => {
+  it('is tagged as engine v2 + fallback provenance', () => {
     const c = buildFallbackComposition(baseInput)
+    expect(COMPOSITION_VERSION).toBe(2)
     expect(c.version).toBe(COMPOSITION_VERSION)
     expect(c.generator).toBe('fallback')
+    expect(c.tone).toBeTruthy()
   })
 })
 
-describe('normalizeComposition strips intro/outro from AI output', () => {
-  it('drops any title and outro scenes the model emits', () => {
-    const kinds = kindsOf(
-      normalizeComposition(
-        baseInput,
-        [
-          { kind: 'title', narration: 'CBA earnings.', headline: 'H' },
-          { kind: 'stat', narration: 'Cash profit rose 4% to $5.1 billion.', value: '$5.1B', label: 'Half-year cash profit' },
-          { kind: 'bullets', narration: 'Margin held at 1.99%; dividend lifted to $2.25.', points: ['NIM 1.99%', 'Dividend $2.25'] },
-          { kind: 'outro', narration: 'Source: AFR via Fiscus.', source: 'AFR' },
-        ],
-        'ai',
-      ),
+describe('normalizeComposition (V2)', () => {
+  it('drops title/outro, keeps content beats, and computes script + tone', () => {
+    const c = normalizeComposition(
+      baseInput,
+      [
+        { kind: 'title', narration: 'CBA earnings.', headline: 'H' },
+        { kind: 'statement', narration: 'Profit jumped, and the market noticed.' },
+        { kind: 'stat', narration: 'Cash profit hit $5.1 billion, up 4%.', value: '$5.1B', label: 'Cash profit' },
+        { kind: 'outro', narration: 'Source: AFR via Fiscus.', source: 'AFR' },
+      ],
+      'ai',
+      'earnings',
     )
+    const kinds = kindsOf(c)
     expect(kinds).not.toContain('title')
     expect(kinds).not.toContain('outro')
+    expect(kinds).toContain('statement')
     expect(kinds).toContain('stat')
-    expect(kinds).toContain('bullets')
+    expect(c.tone).toBe('earnings')
+    expect(c.script).toBe('Profit jumped, and the market noticed. Cash profit hit $5.1 billion, up 4%.')
   })
 
-  it('drops a chart with no real series, keeps it with one', () => {
-    const without = normalizeComposition({ ...baseInput, series: null }, [
-      { kind: 'stat', narration: 'Profit $5.1B.', value: '$5.1B', label: 'Profit' },
-      { kind: 'chart', narration: 'Shares climbed.' },
-    ], 'ai')
-    expect(kindsOf(without)).not.toContain('chart')
-
-    const withSeries = normalizeComposition(baseInput, [
-      { kind: 'stat', narration: 'Profit $5.1B.', value: '$5.1B', label: 'Profit' },
-      { kind: 'chart', narration: 'Shares climbed 2.3%.' },
-    ], 'ai')
-    expect(kindsOf(withSeries)).toContain('chart')
+  it('downgrades a chart with no real series to a statement (keeps the line)', () => {
+    const c = normalizeComposition(
+      { ...baseInput, series: null },
+      [
+        { kind: 'statement', narration: 'The stock barely moved.' },
+        { kind: 'chart', narration: 'But the trend tells a story.' },
+      ],
+      'ai',
+      'neutral',
+    )
+    expect(kindsOf(c)).not.toContain('chart')
+    expect(c.script).toContain('the trend tells a story')
   })
 
-  it('drops bare source / sign-off narration lines', () => {
-    const c = normalizeComposition(baseInput, [
-      { kind: 'stat', narration: 'Profit $5.1B, up 4%.', value: '$5.1B', label: 'Profit' },
-      { kind: 'bullets', narration: 'Source: AFR.', points: ['x'] },
-    ], 'ai')
+  it('drops bare source / sign-off lines', () => {
+    const c = normalizeComposition(
+      baseInput,
+      [
+        { kind: 'statement', narration: 'Profit jumped 4%.' },
+        { kind: 'statement', narration: 'Source: AFR.' },
+      ],
+      'ai',
+      'neutral',
+    )
     expect(c.scenes.length).toBe(1)
   })
 
