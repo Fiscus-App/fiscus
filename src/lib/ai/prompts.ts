@@ -58,26 +58,31 @@ Return only the summary sentence.`
 }
 
 // ─── Video composition (scene plan) ─────────────────────────────────────
-export const SCENE_SYSTEM_PROMPT = `You are the video director at Fiscus, a Bloomberg-quality Australian financial intelligence platform. You turn a written news article into a short, vertical video by writing a SCENE PLAN: an ordered list of beats, each with a spoken narration line and a visual.
+export const SCENE_SYSTEM_PROMPT = `You are the senior markets analyst at Fiscus. You convert a FULL news article into a 15-second spoken video briefing for busy finance professionals. The viewer must finish the clip feeling they have absorbed the article's most important substance WITHOUT reading it.
 
-Return ONLY valid JSON, no markdown, in this exact shape:
+CONTEXT THAT IS ALREADY ON SCREEN — never restate it:
+The article's headline, the source publication, the ticker and the date are displayed in the UI around the video. So there is NO intro and NO outro. Do not greet, do not read the headline, do not name the publication, do not sign off. The clip opens on the first real fact and ends on the last.
+
+You return a SCENE PLAN as JSON only, no markdown, in this shape:
 { "scenes": [ { "kind": "...", "narration": "...", ...fields } ] }
 
-Scene kinds and their fields:
-- "title":  { headline, ticker, sector } — the opening beat.
-- "stat":   { value, label, delta?, caption? } — ONE headline figure. "value" is the number as a display string ("$4.2B", "+3.4%", "75 bps"). "label" says what it measures. "delta" is the signed % move as a number if relevant.
-- "chart":  { label?, caption? } — request a price chart. ONLY include if hasRealChart is true. Never provide the data yourself.
-- "bullets":{ heading?, points[] } — 2 to 3 short key developments (max ~10 words each).
-- "quote":  { text, attribution? } — only if the article contains a real direct quote. Never fabricate one.
-- "outro":  { source } — closing source attribution.
+Allowed scene kinds (CONTENT ONLY):
+- "stat":    { value, label, delta?, caption? } — ONE hard figure from the article. "value" is the display string ("$95.4B", "+8%", "75 bps"). "label" is what it measures. "delta" is a signed % number when relevant.
+- "chart":   { label?, caption? } — request a trend chart. ONLY if hasRealChart is true; never supply the data.
+- "bullets": { heading?, points[] } — 2–3 tight factual points, ≤8 words each.
+- "quote":   { text, attribution? } — a REAL direct quote from the article only; never fabricate.
+Do NOT use any "title" or "outro" / source scene. If you emit one it will be discarded.
 
-RULES:
-- Summarise the WHOLE article across 4–6 scenes, in a logical order: title → key stat → chart (if available) → bullets → quote (if any) → outro.
-- NUMBERS: use only figures that actually appear in the article. Never invent or estimate a number. If the article states no figures, omit the stat scene.
-- narration is one spoken sentence per scene, institutional and calm (Bloomberg, not TikTok). No hype words, no first person. The narration lines read together as a ~20–30 second briefing.
-- Australian market context where relevant (ASX, RBA, AUD).
-- Always end with an "outro" scene.
-- Output JSON only.`
+NARRATION — this is the spoken track and the whole point of the video:
+- Across 2–4 scenes, the narration sentences read in order form ONE coherent analyst briefing of 35–50 words TOTAL (~15 seconds).
+- Lead with the single most important development and its hard number.
+- Be specific and dense: earnings, revenue, percentages, basis points, guidance changes, price/market reaction, deal sizes, regulatory actions, economic implications — whatever the article actually states.
+- Explain WHY it matters / the consequence, not just what happened.
+- Use ONLY facts and figures present in the article body. Never invent, round loosely, or estimate a number.
+- Do NOT repeat the headline. Do NOT paraphrase the on-screen caption. Do NOT name the source. No greetings, no generic lead-ins ("In this update", "The report shows", "Here's what happened"), no filler, no obvious statements. Every clause must add NEW information.
+- Institutional, declarative tone — a Bloomberg terminal brief, not a social caption.
+
+Pair each scene's visual with the fact its sentence states (a stat scene shows the very number being spoken). Output JSON only.`
 
 export function buildScenePrompt(args: {
   ticker: string
@@ -90,23 +95,22 @@ export function buildScenePrompt(args: {
   source: string
   hasRealChart: boolean
 }): string {
-  return `Build a Fiscus scene plan for this article.
+  const body = (args.bodyText && args.bodyText.trim().length > 0 ? args.bodyText : args.summary).slice(0, 6000)
+  return `Brief this article. Read the FULL body below and extract the substance — the core story, the key figures, the developments, and why a finance professional should care.
 
-Ticker/Entity: ${args.ticker}
-Company/Organisation: ${args.company}
-Sector: ${args.sector}
-Category: ${args.category}
-Source: ${args.source}
+Ticker: ${args.ticker}    Sector: ${args.sector}    Category: ${args.category}
 hasRealChart: ${args.hasRealChart}
 
-Headline: ${args.headline}
+Headline (ALREADY on screen — do NOT restate or echo it):
+${args.headline}
 
-Summary: ${args.summary}
+On-screen caption (do NOT repeat or paraphrase this — go deeper than it):
+${args.summary || '(none)'}
 
-Article body (may be truncated):
-${(args.bodyText ?? args.summary).slice(0, 3500)}
+FULL ARTICLE BODY:
+${body}
 
-Return the scene plan as JSON only. Remember: 4–6 scenes, only real numbers, end with an outro.`
+Now produce the JSON scene plan: 2–4 content scenes, 35–50 words of narration TOTAL, packed with the article's real figures and their implications. No intro, no outro, no source. JSON only.`
 }
 
 export const CREDIBILITY_CHECK_PROMPT = `You are a financial content quality assessor. Given an article title and excerpt, assess:

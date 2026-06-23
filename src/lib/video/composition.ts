@@ -10,8 +10,8 @@ import type {
 // Per-scene timing. Scene length tracks its narration length, so when real
 // TTS audio arrives the visual timeline already matches the spoken duration.
 export const COMPOSITION_VERSION = 1
-const MS_PER_WORD = 380 // ≈ 158 wpm — calm, institutional pace
-const BASE_PAD_MS = 900
+const MS_PER_WORD = 360 // ≈ 167 wpm — calm, institutional pace
+const BASE_PAD_MS = 650
 
 const DURATION_BOUNDS: Record<SceneVisual['type'], { min: number; max: number }> = {
   title: { min: 2600, max: 5000 },
@@ -84,6 +84,11 @@ export function normalizeComposition(
   const scenes: VideoScene[] = []
 
   aiScenes.forEach((s, i) => {
+    // No intro/outro: the headline, source and ticker are already shown in the
+    // UI, so drop any title/outro scene the model emits, plus bare source or
+    // sign-off lines. Every second of the clip must carry article content.
+    if (s.kind === 'title' || s.kind === 'outro') return
+    if (isSourceOrSignoff(s.narration)) return
     const visual = buildVisual(s, input, realSeries)
     if (!visual) return // e.g. chart requested but no real data
     scenes.push({
@@ -93,11 +98,6 @@ export function normalizeComposition(
       visual,
     })
   })
-
-  // Always guarantee a closing source attribution.
-  if (!scenes.some((s) => s.visual.type === 'outro')) {
-    scenes.push(makeOutro(input, scenes.length))
-  }
 
   const totalDurationMs = scenes.reduce((sum, s) => sum + s.durationMs, 0)
 
@@ -165,14 +165,51 @@ function buildVisual(
   }
 }
 
-function makeOutro(input: CompositionInput, index: number): VideoScene {
-  const narration = `Source: ${input.source}, via Fiscus.`
-  return {
-    id: `${input.articleId ?? 'comp'}-${index}-outro`,
-    narration,
-    durationMs: durationFor('outro', narration),
-    visual: { type: 'outro', source: input.source, tagline: 'Fiscus Intelligence' },
+/** Detects narration that is just a source credit or sign-off, not content. */
+function isSourceOrSignoff(narration: string): boolean {
+  const n = narration.trim().toLowerCase()
+  if (n.length === 0) return true
+  return /^(source|via|reporting|courtesy|credit)\b/.test(n) ||
+    /\bvia fiscus\b/.test(n) ||
+    /\bback to you\b/.test(n)
+}
+
+/** Rough information score for a sentence — figures carry the substance. */
+function scoreSentence(s: string): number {
+  let score = 0
+  if (/\d/.test(s)) score += 3
+  if (/[%$]/.test(s) || /\b(per ?cent|percent|bps|basis points?|billion|million|trillion)\b/i.test(s)) score += 3
+  const words = s.split(/\s+/).length
+  if (words >= 8 && words <= 30) score += 1
+  return score
+}
+
+/**
+ * Pick the densest sentences for a deterministic briefing: prefer the ones
+ * carrying figures, cap at ~maxWords, and restore original article order so it
+ * still reads coherently.
+ */
+function pickBriefingSentences(text: string, maxWords = 45): string[] {
+  const all = splitSentences(text)
+  const scored = all.map((s, i) => ({ s, i, score: scoreSentence(s) }))
+  const ordered = scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score)
+  const pool = ordered.length > 0 ? ordered : scored
+  const chosen: { s: string; i: number }[] = []
+  let words = 0
+  for (const c of pool) {
+    const w = c.s.split(/\s+/).length
+    if (chosen.length > 0 && words + w > maxWords) break
+    chosen.push({ s: c.s, i: c.i })
+    words += w
+    if (chosen.length >= 3) break
   }
+  return chosen.sort((a, b) => a.i - b.i).map((x) => x.s)
+}
+
+/** Compress a sentence into a short on-screen bullet. */
+function toBullet(s: string): string {
+  const words = s.replace(/[.;:]+$/, '').split(/\s+/)
+  return words.length <= 9 ? words.join(' ') : words.slice(0, 9).join(' ') + '…'
 }
 
 // ─── Deterministic fallback ─────────────────────────────────────────────
@@ -181,58 +218,60 @@ function makeOutro(input: CompositionInput, index: number): VideoScene {
 // real to play. Uses only data we actually have — no invented figures.
 export function buildFallbackComposition(input: CompositionInput): VideoComposition {
   const scenes: AiScene[] = []
+  const hasStat = input.price != null
+  const hasChart = !!(input.series && input.series.length >= 2)
 
-  // 1) Title — the headline beat.
-  scenes.push({
-    kind: 'title',
-    narration: input.headline,
-    headline: input.headline,
-    ticker: input.ticker,
-    sector: input.sector,
-  })
+  // Lead with the substance: the densest, figure-bearing sentences from the
+  // body (or summary) — NOT a restated headline or a source credit. Trim the
+  // word budget to leave room for the stat/chart beats and hit ~15 seconds.
+  const sourceText = input.bodyText && input.bodyText.trim().length > 40 ? input.bodyText : input.summary
+  const budget = 50 - (hasStat ? 10 : 0) - (hasChart ? 9 : 0)
+  const sentences = pickBriefingSentences(sourceText || input.summary || input.headline, Math.max(24, budget))
+  if (sentences.length > 0) {
+    scenes.push({
+      kind: 'bullets',
+      narration: sentences.join(' '),
+      heading: 'Key points',
+      points: sentences.map(toBullet),
+    })
+  }
 
-  // 2) Stat — only if we have a real, live price/move for this ticker.
-  if (input.price != null) {
+  // Market reaction: real, live price/move (never invented).
+  if (hasStat) {
     scenes.push({
       kind: 'stat',
-      narration: `${input.company} last traded at ${formatPrice(input.price)}${
-        input.change != null ? `, ${formatDelta(input.change)} on the session.` : '.'
+      narration: `The stock last traded at ${formatPrice(input.price!)}${
+        input.change != null ? `, ${formatDelta(input.change)} on the day.` : '.'
       }`,
-      value: formatPrice(input.price),
+      value: formatPrice(input.price!),
       label: `${input.ticker} · last`,
       delta: input.change ?? null,
       caption: input.change != null ? `${formatDelta(input.change)} today` : undefined,
     })
   }
 
-  // 3) Chart — only if a real series was supplied (dropped otherwise).
-  if (input.series && input.series.length >= 2) {
-    scenes.push({
-      kind: 'chart',
-      narration: 'Recent price action for context.',
-      label: `${input.ticker} · recent`,
-    })
+  // Trend: a data-driven line from the real series (no generic filler).
+  if (hasChart) {
+    scenes.push({ kind: 'chart', narration: seriesMoveLine(input.series!), label: `${input.ticker} · recent` })
   }
 
-  // 4) Bullets — the article summary, broken into key points.
-  const sentences = splitSentences(input.summary || input.headline)
-  if (sentences.length > 0) {
-    scenes.push({
-      kind: 'bullets',
-      narration: input.summary || input.headline,
-      heading: 'The update',
-      points: sentences.slice(0, 3),
-    })
+  // Guarantee at least one content scene.
+  if (scenes.length === 0) {
+    const line = input.summary || input.headline
+    scenes.push({ kind: 'bullets', narration: line, points: [toBullet(line)] })
   }
-
-  // 5) Outro — source attribution (normaliser guarantees this anyway).
-  scenes.push({
-    kind: 'outro',
-    narration: `Source: ${input.source}, via Fiscus.`,
-    source: input.source,
-  })
 
   return normalizeComposition(input, scenes, 'fallback')
+}
+
+/** Factual one-liner describing the move across a real price series. */
+function seriesMoveLine(series: number[]): string {
+  const first = series[0]
+  const last = series[series.length - 1]
+  if (!first) return 'Recent sessions shown for context.'
+  const pct = ((last - first) / first) * 100
+  const dir = pct >= 0 ? 'risen' : 'fallen'
+  return `Across the sessions shown, the stock has ${dir} ${Math.abs(pct).toFixed(1)}%.`
 }
 
 function formatPrice(p: number): string {
