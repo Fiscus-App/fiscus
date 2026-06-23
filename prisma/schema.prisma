@@ -374,6 +374,7 @@ model Video {
   title         String
   thumbnailUrl  String?
   videoUrl      String?
+  composition   Json?       // cached scene-plan composition (AI video) — optional
   duration      Int?
   status        VideoStatus @default(PENDING)
   generatedAt   DateTime?

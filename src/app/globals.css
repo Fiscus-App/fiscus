@@ -306,3 +306,21 @@ button:active {
 /* ─── Blue accent ─────────────────────────────────────────────────── */
 .blue-a { background: rgba(91, 138, 245, 0.1); }
 
+
+/* ─── Video composition / scene animations ──────────────────────────── */
+@keyframes sceneIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes statPop {
+  from { opacity: 0; transform: scale(0.86); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes chartDraw {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes bulletIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}

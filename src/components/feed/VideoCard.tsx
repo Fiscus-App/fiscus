@@ -1,47 +1,81 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import {
-  TrendingUp, Bookmark, Share2, Clapperboard, Play,
-  Loader2, Music2, ChevronUp, ChevronDown,
+  TrendingUp, Bookmark, Share2, Play,
+  Loader2, Music2, ChevronUp, ChevronDown, X,
 } from 'lucide-react'
 import { SourceBadge } from './SourceBadge'
-import type { FeedItem } from '@/types'
+import { VideoPlayer } from '@/components/video/VideoPlayer'
+import type { FeedItem, VideoComposition } from '@/types'
 
 interface Props {
   item: FeedItem
   height: number
+  /** True when this is the in-view card — triggers muted scroll-autoplay. */
+  active?: boolean
   onInsightful: (id: string) => void
   onSave: (id: string) => void
   onShare: (id: string) => void
 }
 
-export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props) {
+export function VideoCard({ item, height, active = false, onInsightful, onSave, onShare }: Props) {
   const [expanded, setExpanded]   = useState(false)
   const [aiScript, setAiScript]   = useState<string | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiDone, setAiDone]       = useState(false)
-  const [playing, setPlaying]     = useState(false)
-  const [progress, setProgress]   = useState(0)
+  const [playerOpen, setPlayerOpen]     = useState(false)
+  const [composing, setComposing]       = useState(false)
+  const [composition, setComposition]   = useState<VideoComposition | null>(null)
+  const [progress, setProgress]         = useState(0)
+  const [startMuted, setStartMuted]     = useState(false)
 
   const isUp       = item.change != null && item.change >= 0
   const chartColor = item.change != null ? (isUp ? '#2ed494' : '#ff5252') : '#5b8af5'
   const chartData  = item.chartData?.map((v) => ({ v })) ?? []
   const displayScript = aiDone && aiScript ? aiScript : item.script
 
-  // ── Play animation ────────────────────────────────────────────────────────
-  const handlePlay = useCallback(() => {
-    if (playing) return
-    setPlaying(true); setProgress(0)
-    const start = performance.now()
-    const tick = (now: number) => {
-      const pct = Math.min((now - start) / 15000, 1)
-      setProgress(pct * 100)
-      if (pct < 1) requestAnimationFrame(tick); else setPlaying(false)
+  // ── Open the AI video: compose on demand, then play ─────────────────────────
+  const openPlayer = useCallback(async (opts?: { muted?: boolean }) => {
+    setStartMuted(opts?.muted ?? false)
+    if (composition) { setPlayerOpen(true); return }
+    if (composing) return
+    setComposing(true)
+    try {
+      const res = await fetch('/api/videos/compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          articleId: item.id,
+          ticker: item.ticker, company: item.company, headline: item.headline,
+          summary: item.teaser, sector: item.sector, sectorColor: item.sectorColor,
+          category: item.category, source: item.source,
+          change: item.change, price: item.price, series: item.chartData,
+        }),
+      })
+      if (!res.ok) throw new Error('compose failed')
+      const json = await res.json()
+      setComposition(json.composition as VideoComposition)
+      setProgress(0)
+      setPlayerOpen(true)
+    } catch {
+      /* leave the card as-is on failure */
+    } finally {
+      setComposing(false)
     }
-    requestAnimationFrame(tick)
-  }, [playing])
+  }, [composition, composing, item])
+
+  // ── Scroll-autoplay: play (muted) when this becomes the in-view card, ───────
+  //    stop when it scrolls away. A short settle delay avoids firing on fast
+  //    fly-by scrolls. Manual Play (below) opens with sound instead.
+  const openPlayerRef = useRef(openPlayer)
+  openPlayerRef.current = openPlayer
+  useEffect(() => {
+    if (!active) { setPlayerOpen(false); return }
+    const t = setTimeout(() => openPlayerRef.current({ muted: true }), 350)
+    return () => clearTimeout(t)
+  }, [active])
 
   // ── AI script stream ──────────────────────────────────────────────────────
   const handleAI = useCallback(async () => {
@@ -179,8 +213,8 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
       </div>
 
       {/* ══ CENTRE PLAY BUTTON ════════════════════════════════════════════ */}
-      {!playing && item.videoStatus === 'COMPLETE' && (
-        <button onClick={handlePlay}
+      {!playerOpen && (
+        <button onClick={() => openPlayer({ muted: false })} disabled={composing} aria-label="Play AI video"
           className="absolute flex items-center justify-center rounded-full z-10"
           style={{
             top: '42%', left: '50%', transform: 'translate(-50%, -50%)',
@@ -189,8 +223,11 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
             border: '2px solid rgba(212,168,67,0.55)',
             backdropFilter: 'blur(12px)',
             boxShadow: '0 0 30px rgba(212,168,67,0.2)',
+            cursor: composing ? 'wait' : 'pointer',
           }}>
-          <Play size={26} fill="var(--gold)" style={{ color: 'var(--gold)', marginLeft: 4 }} />
+          {composing
+            ? <Loader2 size={26} className="animate-spin" style={{ color: 'var(--gold)' }} />
+            : <Play size={26} fill="var(--gold)" style={{ color: 'var(--gold)', marginLeft: 4 }} />}
         </button>
       )}
 
@@ -269,7 +306,7 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
           style={{
             background: 'linear-gradient(135deg, #1e2a44 0%, #07091a 100%)',
             border: '2px solid rgba(255,255,255,0.25)',
-            animation: playing ? 'spin 3s linear infinite' : 'none',
+            animation: playerOpen ? 'spin 3s linear infinite' : 'none',
           }}>
           <div className="w-3.5 h-3.5 rounded-full" style={{ background: '#07091a', border: '2px solid rgba(255,255,255,0.3)' }} />
         </div>
@@ -344,9 +381,30 @@ export function VideoCard({ item, height, onInsightful, onSave, onShare }: Props
           height: '100%',
           width: `${progress}%`,
           background: 'linear-gradient(90deg, var(--gold), rgba(212,168,67,0.5))',
-          transition: playing ? 'width 0.1s linear' : 'none',
+          transition: playerOpen ? 'width 0.1s linear' : 'none',
         }} />
       </div>
+
+      {/* ══ AI VIDEO PLAYER OVERLAY ═══════════════════════════════════════ */}
+      {playerOpen && composition && (
+        <div className="absolute inset-0 z-40">
+          <VideoPlayer
+            key={startMuted ? 'auto' : 'manual'}
+            composition={composition}
+            autoPlay
+            startMuted={startMuted}
+            onProgress={(f) => setProgress(f * 100)}
+          />
+          <button onClick={() => setPlayerOpen(false)} aria-label="Close video"
+            className="absolute top-3 right-3 z-50 flex items-center justify-center rounded-full"
+            style={{
+              width: 34, height: 34, background: 'rgba(5,8,26,0.7)',
+              border: '1px solid rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)',
+            }}>
+            <X size={18} style={{ color: 'rgba(255,255,255,0.85)' }} />
+          </button>
+        </div>
+      )}
 
     </div>
   )

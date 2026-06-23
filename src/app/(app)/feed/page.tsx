@@ -17,7 +17,10 @@ export default function FeedPage() {
   const [loading, setLoading]       = useState(true)
   const [cardHeight, setCardHeight] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [activeId, setActiveId]     = useState<string | null>(null)
   const intervalRef                 = useRef<ReturnType<typeof setInterval> | null>(null)
+  const scrollRef                   = useRef<HTMLDivElement>(null)
+  const ratiosRef                   = useRef<Map<string, number>>(new Map())
 
   // Viewport height minus header (58), nav (70) and the feed tab bar.
   useEffect(() => {
@@ -52,6 +55,29 @@ export default function FeedPage() {
     intervalRef.current = setInterval(() => fetchFeed(true), 60_000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [fetchFeed])
+
+  // Track which card is in view → that card scroll-autoplays (muted).
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!root || items.length === 0) return
+    ratiosRef.current.clear()
+    const els = Array.from(root.querySelectorAll<HTMLElement>('[data-feed-id]'))
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.feedId
+          if (id) ratiosRef.current.set(id, e.isIntersecting ? e.intersectionRatio : 0)
+        }
+        let best: string | null = null
+        let bestRatio = 0
+        ratiosRef.current.forEach((r, id) => { if (r > bestRatio) { bestRatio = r; best = id } })
+        setActiveId(bestRatio >= 0.6 ? best : null)
+      },
+      { root, threshold: [0, 0.6, 0.9] },
+    )
+    els.forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [items])
 
   const { handleInsightful, handleSave, handleShare } = useFeedInteractions(items, setItems)
 
@@ -90,7 +116,7 @@ export default function FeedPage() {
       </div>
 
       {/* ── Snap-scroll feed (starts cleanly below the tab bar) ───────────── */}
-      <div className="feed-scroll" style={{ height: cardHeight }}>
+      <div ref={scrollRef} className="feed-scroll" style={{ height: cardHeight }}>
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3" style={{ height: cardHeight }}>
             <RefreshCw size={22} className="animate-spin" style={{ color: 'var(--text-muted)' }} />
@@ -116,10 +142,11 @@ export default function FeedPage() {
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="feed-item" style={{ height: cardHeight }}>
+            <div key={item.id} data-feed-id={item.id} className="feed-item" style={{ height: cardHeight }}>
               <VideoCard
                 item={item}
                 height={cardHeight}
+                active={item.id === activeId}
                 onInsightful={handleInsightful}
                 onSave={handleSave}
                 onShare={handleShare}

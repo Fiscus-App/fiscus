@@ -156,3 +156,107 @@ export interface ScriptGenerationInput {
   price: number | null
   source: string
 }
+
+// ─── AI VIDEO COMPOSITION ───────────────────────────────────────────────
+// A Fiscus "video" is a timed composition of scenes: the AI summarises the
+// whole article into a sequence of beats, each pairing a narration line with
+// an auto-built visual (a stat card, a chart, a pulled quote…). This renders
+// client-side today; the same contract drives a server-side MP4 render later.
+
+export type SceneKind = 'title' | 'stat' | 'chart' | 'bullets' | 'quote' | 'outro'
+
+export interface TitleVisual {
+  type: 'title'
+  headline: string
+  ticker?: string
+  sector?: string
+}
+
+export interface StatVisual {
+  type: 'stat'
+  /** Big number pulled from the article, e.g. "$4.2B", "+3.4%", "75 bps". */
+  value: string
+  /** What the number describes, e.g. "Half-year net profit". */
+  label: string
+  /** Optional signed % move for up/down colouring. */
+  delta?: number | null
+  /** One-line supporting context shown under the number. */
+  caption?: string
+}
+
+export interface ChartVisual {
+  type: 'chart'
+  /** Real series only — never invented prices. Empty ⇒ scene is dropped. */
+  series: number[]
+  label?: string
+  /** Forces up (green) / down (red) tint; inferred from series when omitted. */
+  positive?: boolean
+  caption?: string
+}
+
+export interface BulletsVisual {
+  type: 'bullets'
+  heading?: string
+  points: string[]
+}
+
+export interface QuoteVisual {
+  type: 'quote'
+  text: string
+  attribution?: string
+}
+
+export interface OutroVisual {
+  type: 'outro'
+  source: string
+  tagline?: string
+}
+
+export type SceneVisual =
+  | TitleVisual
+  | StatVisual
+  | ChartVisual
+  | BulletsVisual
+  | QuoteVisual
+  | OutroVisual
+
+export interface VideoScene {
+  id: string
+  /** Caption shown this beat; the future TTS voiceover reads this line. */
+  narration: string
+  /** How long this scene holds, in milliseconds. */
+  durationMs: number
+  visual: SceneVisual
+}
+
+export interface VideoComposition {
+  /** Schema version, so stored compositions stay forward-compatible. */
+  version: number
+  articleId?: string
+  ticker: string
+  sector: string
+  /** Hex accent (sector colour) used to theme the whole video. */
+  accent: string
+  totalDurationMs: number
+  scenes: VideoScene[]
+  /** Honest provenance: built by the model, or by the deterministic fallback. */
+  generator: 'ai' | 'fallback'
+  generatedAt: string
+}
+
+/** Article-shaped input the composer needs to build a video. */
+export interface CompositionInput {
+  articleId?: string
+  ticker: string
+  company: string
+  headline: string
+  summary: string
+  bodyText?: string
+  sector: string
+  sectorColor: string
+  category: string
+  source: string
+  change?: number | null
+  price?: number | null
+  series?: number[] | null
+}

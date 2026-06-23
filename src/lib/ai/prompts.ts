@@ -57,6 +57,58 @@ ${bodyText.slice(0, 2000)}
 Return only the summary sentence.`
 }
 
+// ─── Video composition (scene plan) ─────────────────────────────────────
+export const SCENE_SYSTEM_PROMPT = `You are the video director at Fiscus, a Bloomberg-quality Australian financial intelligence platform. You turn a written news article into a short, vertical video by writing a SCENE PLAN: an ordered list of beats, each with a spoken narration line and a visual.
+
+Return ONLY valid JSON, no markdown, in this exact shape:
+{ "scenes": [ { "kind": "...", "narration": "...", ...fields } ] }
+
+Scene kinds and their fields:
+- "title":  { headline, ticker, sector } — the opening beat.
+- "stat":   { value, label, delta?, caption? } — ONE headline figure. "value" is the number as a display string ("$4.2B", "+3.4%", "75 bps"). "label" says what it measures. "delta" is the signed % move as a number if relevant.
+- "chart":  { label?, caption? } — request a price chart. ONLY include if hasRealChart is true. Never provide the data yourself.
+- "bullets":{ heading?, points[] } — 2 to 3 short key developments (max ~10 words each).
+- "quote":  { text, attribution? } — only if the article contains a real direct quote. Never fabricate one.
+- "outro":  { source } — closing source attribution.
+
+RULES:
+- Summarise the WHOLE article across 4–6 scenes, in a logical order: title → key stat → chart (if available) → bullets → quote (if any) → outro.
+- NUMBERS: use only figures that actually appear in the article. Never invent or estimate a number. If the article states no figures, omit the stat scene.
+- narration is one spoken sentence per scene, institutional and calm (Bloomberg, not TikTok). No hype words, no first person. The narration lines read together as a ~20–30 second briefing.
+- Australian market context where relevant (ASX, RBA, AUD).
+- Always end with an "outro" scene.
+- Output JSON only.`
+
+export function buildScenePrompt(args: {
+  ticker: string
+  company: string
+  headline: string
+  summary: string
+  bodyText?: string
+  sector: string
+  category: string
+  source: string
+  hasRealChart: boolean
+}): string {
+  return `Build a Fiscus scene plan for this article.
+
+Ticker/Entity: ${args.ticker}
+Company/Organisation: ${args.company}
+Sector: ${args.sector}
+Category: ${args.category}
+Source: ${args.source}
+hasRealChart: ${args.hasRealChart}
+
+Headline: ${args.headline}
+
+Summary: ${args.summary}
+
+Article body (may be truncated):
+${(args.bodyText ?? args.summary).slice(0, 3500)}
+
+Return the scene plan as JSON only. Remember: 4–6 scenes, only real numbers, end with an outro.`
+}
+
 export const CREDIBILITY_CHECK_PROMPT = `You are a financial content quality assessor. Given an article title and excerpt, assess:
 1. Is this from a verifiable factual event (score: HIGH)?
 2. Is this speculative or opinion-based (score: MEDIUM)?
